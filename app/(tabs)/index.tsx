@@ -1,5 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
+import { GlassView } from 'expo-glass-effect';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -11,7 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_WIDTH = SCREEN_WIDTH - 32;
@@ -242,39 +243,70 @@ function ProductSection({ title, products }: { title: string; products: Product[
 }
 
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+  const [flagType, setFlagType] = useState<'india' | 'usa'>('usa');
+  
   const saleProducts = productsData.filter(p => p.category === 'Sale');
   const sodaProducts = productsData.filter(p => p.category === 'Soda');
   const candyProducts = productsData.filter(p => p.category === 'Candy');
   const snackProducts = productsData.filter(p => p.category === 'Snack');
   const vegetableProducts = productsData.filter(p => p.category === 'Vegetables');
 
-  return (
-    <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Top Action Bar */}
-        <View style={styles.header}>
-          <ThemedText type="title" style={styles.title}>
-            Fresh Groceries
-          </ThemedText>
-          <View style={styles.headerActions}>
-            <Pressable
-              style={styles.iconButton}
-              onPress={() => console.log('Cart pressed')}
-              android_ripple={{ color: '#f0f0f0', borderless: true }}
-            >
-              <Ionicons name="cart-outline" size={24} color="#000" />
-            </Pressable>
-            <Pressable
-              style={styles.iconButton}
-              onPress={() => console.log('Notifications pressed')}
-              android_ripple={{ color: '#f0f0f0', borderless: true }}
-            >
-              <Ionicons name="notifications-outline" size={24} color="#000" />
-            </Pressable>
-          </View>
-        </View>
+  // Calculate dynamic top spacing for banner
+  // Account for: safe area top + button height + margin
+  const bannerTopSpacing = insets.top + 60 + 30;
 
+  const toggleFlag = () => {
+    setFlagType(prev => prev === 'usa' ? 'india' : 'usa');
+  };
+
+  return (
+    <View style={styles.container}>
+      {/* Fixed Glass Greeting */}
+      <View style={[styles.fixedGreeting, { top: insets.top + 20 }]}>
+        <GlassView style={styles.glassGreeting}>
+          <ThemedText style={styles.greetingText}>
+            Hey, Pranav !
+          </ThemedText>
+        </GlassView>
+      </View>
+
+      {/* Fixed Glass Icon Buttons */}
+      <View style={[styles.fixedButtons, { top: insets.top + 20 }]}>
+        <GlassView style={styles.glassButton}>
+          <Pressable
+            onPress={() => console.log('Cart pressed')}
+            style={styles.iconPressable}
+          >
+            <Ionicons name="cart-outline" size={22} color="#000" />
+          </Pressable>
+        </GlassView>
+        <GlassView style={styles.glassButton}>
+          <Pressable
+            onPress={() => console.log('Notifications pressed')}
+            style={styles.iconPressable}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#000" />
+          </Pressable>
+        </GlassView>
+        <GlassView style={styles.glassButton}>
+          <Pressable
+            onPress={toggleFlag}
+            style={styles.iconPressable}
+          >
+            <ThemedText style={styles.flagIcon}>
+              {flagType === 'usa' ? '🇺🇸' : '🇮🇳'}
+            </ThemedText>
+          </Pressable>
+        </GlassView>
+      </View>
+
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+      >
         {/* Banner Carousel */}
+        <View style={{ height: bannerTopSpacing }} />
         <View style={styles.bannerSection}>
           <BannerCarousel />
         </View>
@@ -301,40 +333,66 @@ export default function HomeScreen() {
         <ProductSection title="Candy & Sweets 🍭" products={candyProducts} />
         <ProductSection title="Snacks 🍪" products={snackProducts} />
         <ProductSection title="Fresh Vegetables 🥬" products={vegetableProducts} />
+        <View style={{ height: insets.bottom + 20 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+  },
+  fixedGreeting: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 1000,
+  },
+  glassGreeting: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
+    minWidth: 140,
+  },
+  greetingText: {
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  fixedButtons: {
+    position: 'absolute',
+    right: 16,
+    zIndex: 1000,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  glassButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  iconPressable: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  flagIcon: {
+    fontSize: 20,
   },
   scrollView: {
     flex: 1,
+    backgroundColor: '#fff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingBottom: 12,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   bannerSection: {
     marginBottom: 24,
