@@ -1,9 +1,11 @@
 import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text } from 'react-native';
 
 export default function UserProfile() {
   return (
-    <View style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}>
       <Image
         source={{
           uri: 'https://randomuser.me/api/portraits/men/41.jpg',
@@ -12,16 +14,20 @@ export default function UserProfile() {
       />
       <Text style={styles.name}>John Doe</Text>
       <Text style={styles.email}>john.doe@example.com</Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
+  },
+  contentContainer: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    minHeight: '100%',
   },
   avatar: {
     width: 96,

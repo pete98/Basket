@@ -252,10 +252,6 @@ export default function HomeScreen() {
   const snackProducts = productsData.filter(p => p.category === 'Snack');
   const vegetableProducts = productsData.filter(p => p.category === 'Vegetables');
 
-  // Calculate dynamic top spacing for banner
-  // Account for: safe area top + button height + margin
-  const bannerTopSpacing = insets.top + 60 + 30;
-
   const toggleFlag = () => {
     setFlagType(prev => prev === 'usa' ? 'india' : 'usa');
   };
@@ -306,7 +302,6 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Banner Carousel */}
-        <View style={{ height: bannerTopSpacing }} />
         <View style={styles.bannerSection}>
           <BannerCarousel />
         </View>
@@ -395,6 +390,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   bannerSection: {
+    marginTop: 80,
     marginBottom: 24,
     paddingHorizontal: 16,
   },

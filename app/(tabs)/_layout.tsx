@@ -16,7 +16,7 @@ export default function TabLayout() {
 
     <NativeTabs.Trigger name="explore">
       <Label>Categories</Label>
-      <Icon sf={"paperplane.fill"} />
+      <Icon sf={"square.grid.2x2.fill"} />
     </NativeTabs.Trigger>
 
     <NativeTabs.Trigger name="user">

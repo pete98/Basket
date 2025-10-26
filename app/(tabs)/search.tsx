@@ -1,7 +1,7 @@
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { GlassView } from 'expo-glass-effect';
 import React, { useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function SearchScreen() {
@@ -13,7 +13,7 @@ function SearchScreen() {
   const isDark = colorScheme === 'dark';
 
   return (
-    <View
+    <ScrollView
       style={[
         styles.container,
         {
@@ -22,7 +22,7 @@ function SearchScreen() {
           backgroundColor: isDark ? '#19191c' : '#f7f7f9',
         },
       ]}
-    >
+      contentContainerStyle={styles.contentContainer}>
       <Text style={[styles.label, { color: isDark ? '#fff' : '#18181a' }]}>
         Search
       </Text>
@@ -62,16 +62,19 @@ function SearchScreen() {
           {query.length > 0 ? `No results for "${query}"` : 'No search started'}
         </Text>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  contentContainer: {
     alignItems: 'center',
     paddingHorizontal: 24,
     width: '100%',
+    minHeight: '100%',
   },
   label: {
     fontSize: 24,
