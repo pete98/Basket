@@ -6,6 +6,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -245,6 +246,7 @@ function ProductSection({ title, products }: { title: string; products: Product[
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [flagType, setFlagType] = useState<'india' | 'usa'>('usa');
+  const [glassContainerHeight, setGlassContainerHeight] = useState(0);
   
   const saleProducts = productsData.filter(p => p.category === 'Sale');
   const sodaProducts = productsData.filter(p => p.category === 'Soda');
@@ -256,61 +258,64 @@ export default function HomeScreen() {
     setFlagType(prev => prev === 'usa' ? 'india' : 'usa');
   };
 
+  const handleGlassContainerLayout = (event: any) => {
+    const { height } = event.nativeEvent.layout;
+    // Store the height of the glass container
+    setGlassContainerHeight(height);
+  };
+
+  // Calculate scroll padding using the measured glass container height.
+  // Safe-area padding comes from the system on iOS, and we add it manually on Android.
+  const estimatedContainerHeight = glassContainerHeight > 0 ? glassContainerHeight : 140;
+  const headerSpacing = 20;
+  const contentGap = 16;
+  const headerTopOffset = insets.top + headerSpacing;
+  const baseContentOffset = headerSpacing + estimatedContainerHeight + contentGap;
+  const totalTopOffset = baseContentOffset + (Platform.OS === 'ios' ? 0 : insets.top);
+
   return (
     <View style={styles.container}>
-      {/* Fixed Glass Greeting */}
-      <View style={[styles.fixedGreeting, { top: insets.top + 20 }]}>
-        <GlassView style={styles.glassGreeting}>
-          <ThemedText style={styles.greetingText}>
-            Hey, Pranav !
-          </ThemedText>
-        </GlassView>
-      </View>
-
-      {/* Fixed Glass Icon Buttons */}
-      <View style={[styles.fixedButtons, { top: insets.top + 20 }]}>
-        <GlassView style={styles.glassButton}>
-          <Pressable
-            onPress={() => console.log('Cart pressed')}
-            style={styles.iconPressable}
-          >
-            <Ionicons name="cart-outline" size={22} color="#000" />
-          </Pressable>
-        </GlassView>
-        <GlassView style={styles.glassButton}>
-          <Pressable
-            onPress={() => console.log('Notifications pressed')}
-            style={styles.iconPressable}
-          >
-            <Ionicons name="notifications-outline" size={22} color="#000" />
-          </Pressable>
-        </GlassView>
-        <GlassView style={styles.glassButton}>
-          <Pressable
-            onPress={toggleFlag}
-            style={styles.iconPressable}
-          >
-            <ThemedText style={styles.flagIcon}>
-              {flagType === 'usa' ? '🇺🇸' : '🇮🇳'}
-            </ThemedText>
-          </Pressable>
-        </GlassView>
-      </View>
-
-      <ScrollView 
-        style={styles.scrollView} 
-        showsVerticalScrollIndicator={false}
+      {/* Fixed Glass Container with Categories and Icon Buttons */}
+      <View 
+        style={[styles.fixedGlassContainer, { top: headerTopOffset }]}
       >
-        {/* Banner Carousel */}
-        <View style={styles.bannerSection}>
-          <BannerCarousel />
-        </View>
-
-        {/* Categories */}
-        <View style={styles.categoriesSection}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            Categories
-          </ThemedText>
+        <View onLayout={handleGlassContainerLayout}>
+          <GlassView style={styles.glassContainer}>
+          {/* Header Row: Categories Title and Icon Buttons */}
+          <View style={styles.glassHeader}>
+            <ThemedText type="subtitle" style={styles.categoriesTitle}>
+              Categories
+            </ThemedText>
+            <View style={styles.iconButtonsRow}>
+              <GlassView style={styles.glassButton}>
+                <Pressable
+                  onPress={() => console.log('Cart pressed')}
+                  style={styles.iconPressable}
+                >
+                  <Ionicons name="cart-outline" size={22} color="#000" />
+                </Pressable>
+              </GlassView>
+              <GlassView style={styles.glassButton}>
+                <Pressable
+                  onPress={() => console.log('Notifications pressed')}
+                  style={styles.iconPressable}
+                >
+                  <Ionicons name="notifications-outline" size={22} color="#000" />
+                </Pressable>
+              </GlassView>
+              <GlassView style={styles.glassButton}>
+                <Pressable
+                  onPress={toggleFlag}
+                  style={styles.iconPressable}
+                >
+                  <ThemedText style={styles.flagIcon}>
+                    {flagType === 'usa' ? '🇺🇸' : '🇮🇳'}
+                  </ThemedText>
+                </Pressable>
+              </GlassView>
+            </View>
+          </View>
+          {/* Categories Scrollable List */}
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -320,6 +325,22 @@ export default function HomeScreen() {
               <CategoryCard key={category.id} category={category} />
             ))}
           </ScrollView>
+          </GlassView>
+        </View>
+      </View>
+
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: totalTopOffset }
+        ]}
+      >
+        {/* Banner Carousel */}
+        <View style={styles.bannerSection}>
+          <BannerCarousel />
         </View>
 
         {/* Product Sections */}
@@ -338,25 +359,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  fixedGreeting: {
+  fixedGlassContainer: {
     position: 'absolute',
     left: 16,
-    zIndex: 1000,
-  },
-  glassGreeting: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-    minWidth: 140,
-  },
-  greetingText: {
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  fixedButtons: {
-    position: 'absolute',
     right: 16,
     zIndex: 1000,
+  },
+  glassContainer: {
+    padding: 16,
+    borderRadius: 20,
+  },
+  glassHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  categoriesTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  iconButtonsRow: {
     flexDirection: 'row',
     gap: 12,
   },
@@ -378,6 +401,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
+  scrollContent: {
+    // paddingTop is set dynamically based on glass container height
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -390,7 +416,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   bannerSection: {
-    marginTop: 80,
     marginBottom: 24,
     paddingHorizontal: 16,
   },
@@ -422,9 +447,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#4a5568',
     width: 24,
   },
-  categoriesSection: {
-    paddingVertical: 16,
-  },
   sectionTitle: {
     paddingHorizontal: 16,
     marginBottom: 12,
@@ -432,7 +454,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   categoriesContainer: {
-    paddingHorizontal: 16,
     gap: 12,
   },
   categoryCard: {
