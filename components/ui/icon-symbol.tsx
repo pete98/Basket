@@ -39,6 +39,9 @@ const MAPPING = {
   'flame.circle.fill': 'local-fire-department',
   'house.circle.fill': 'home',
   'fish.fill': 'set-meal',
+  'square.grid.2x2.fill': 'apps',
+  'person.fill': 'person',
+  'magnifyingglass': 'search',
 } as IconMapping;
 
 /**
@@ -58,5 +61,7 @@ export function IconSymbol({
   style?: StyleProp<TextStyle>;
   weight?: SymbolWeight;
 }) {
+  // On Android/web, show Material icon (drawable equivalent)
+  // On iOS, both SF symbol and Material icon are shown via icon-symbol.ios.tsx
   return <MaterialIcons color={color} size={size} name={MAPPING[name]} style={style} />;
 }

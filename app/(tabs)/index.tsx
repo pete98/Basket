@@ -1,6 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView } from 'expo-glass-effect';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
@@ -14,9 +14,15 @@ import {
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_WIDTH = SCREEN_WIDTH - 32;
+// Calculate category card width: (screen width - glass margins - glass padding - gaps) / cards per row
+// Glass container: 16px left + 16px right margins = 32px, 16px padding each side = 32px total
+// Available width = SCREEN_WIDTH - 64, for 4 cards with 3 gaps of 8px
+const CATEGORY_CARD_WIDTH = Math.floor((SCREEN_WIDTH - 64 - 24) / 4); // 4 cards per row
+const CATEGORY_CARD_HEIGHT = 90;
 
 // Mock Data
 const banners = [
@@ -27,15 +33,15 @@ const banners = [
 ];
 
 const categories = [
-  { id: '1', name: 'Vegetables', icon: '🥬' },
-  { id: '2', name: 'Fruits', icon: '🍎' },
-  { id: '3', name: 'Dairy', icon: '🥛' },
-  { id: '4', name: 'Snacks', icon: '🍪' },
-  { id: '5', name: 'Candy', icon: '🍭' },
-  { id: '6', name: 'Soda', icon: '🥤' },
+  { id: '1', name: 'Soda', icon: '🥤' },
+  { id: '2', name: 'Snacks', icon: '🍎' },
+  { id: '3', name: 'Candy', icon: '🍭' },
+  { id: '4', name: 'Grocery', icon: '🛒' },
+  { id: '5', name: 'Veggies', icon: '🥬' },
+  { id: '6', name: 'Fruits', icon: '🍉' },
   { id: '7', name: 'Meat', icon: '🥩' },
   { id: '8', name: 'Bakery', icon: '🍞' },
-  { id: '9', name: 'Beverages', icon: '🧃' },
+  { id: '9', name: 'Drinks', icon: '🧃' },
   { id: '10', name: 'Frozen', icon: '🧊' },
 ];
 
@@ -171,18 +177,32 @@ function BannerCarousel() {
   );
 }
 
-function CategoryCard({ category }: { category: typeof categories[0] }) {
+function CategoryCard({ 
+  category, 
+  isSelected, 
+  onPress 
+}: { 
+  category: typeof categories[0]; 
+  isSelected: boolean; 
+  onPress: () => void;
+}) {
   return (
-    <Pressable
-      style={styles.categoryCard}
-      onPress={() => console.log(`Category pressed: ${category.name}`)}
-      android_ripple={{ color: '#f0f0f0' }}
+    <TouchableOpacity
+      style={[
+        styles.categoryCard,
+        isSelected && styles.categoryCardSelected
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
-      <View style={styles.categoryIconContainer}>
+      <View style={styles.categoryIconContainer} pointerEvents="none">
         <ThemedText style={styles.categoryIcon}>{category.icon}</ThemedText>
       </View>
-      <ThemedText style={styles.categoryName}>{category.name}</ThemedText>
-    </Pressable>
+      <ThemedText style={styles.categoryName} numberOfLines={2} pointerEvents="none">
+        {category.name}
+      </ThemedText>
+    </TouchableOpacity>
   );
 }
 
@@ -221,6 +241,10 @@ function ProductCard({ product }: { product: Product }) {
 }
 
 function ProductSection({ title, products }: { title: string; products: Product[] }) {
+  if (!products || products.length === 0) {
+    return null;
+  }
+  
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
@@ -243,16 +267,109 @@ function ProductSection({ title, products }: { title: string; products: Product[
   );
 }
 
+// Conditional Glass Component - uses GlassView when available, View as fallback
+function ConditionalGlassView({ 
+  style, 
+  children 
+}: { 
+  style?: any; 
+  children: React.ReactNode;
+}) {
+  const isGlassAvailable = isLiquidGlassAvailable();
+  
+  // Determine if this is a button (small circular) or container (larger)
+  const isButton = style?.width === 40 && style?.height === 40;
+  
+  if (isGlassAvailable) {
+    // Use GlassView when available, with Android fallback styling
+    return (
+      <GlassView style={[
+        style,
+        Platform.OS === 'android' && styles.glassContainerAndroid
+      ]}>
+        {children}
+      </GlassView>
+    );
+  }
+  
+  // Fallback to View with background styling
+  return (
+    <View style={[
+      style,
+      Platform.OS === 'android' && styles.glassContainerAndroid,
+      !isGlassAvailable && (isButton ? styles.glassButtonFallback : styles.glassFallback)
+    ]}>
+      {children}
+    </View>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const [flagType, setFlagType] = useState<'india' | 'usa'>('usa');
   const [glassContainerHeight, setGlassContainerHeight] = useState(0);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  
+  // Map category names to product categories
+  const getProductCategory = (categoryName: string): string | null => {
+    const categoryMap: Record<string, string> = {
+      'Soda': 'Soda',
+      'Snacks': 'Snack',
+      'Candy': 'Candy',
+      'Veggies': 'Vegetables',
+      'Drinks': 'Soda', // Map Drinks to Soda as well
+    };
+    return categoryMap[categoryName] || null;
+  };
+  
+  // Filter products based on selected category
+  const filteredProducts = selectedCategory 
+    ? productsData.filter(p => {
+        const productCategory = getProductCategory(selectedCategory);
+        return productCategory && p.category === productCategory;
+      })
+    : [];
+  
+  // Scroll to top when category changes
+  useEffect(() => {
+    if (scrollViewRef.current) {
+      scrollViewRef.current.scrollTo({ y: 0, animated: true });
+    }
+  }, [selectedCategory]);
   
   const saleProducts = productsData.filter(p => p.category === 'Sale');
   const sodaProducts = productsData.filter(p => p.category === 'Soda');
   const candyProducts = productsData.filter(p => p.category === 'Candy');
   const snackProducts = productsData.filter(p => p.category === 'Snack');
   const vegetableProducts = productsData.filter(p => p.category === 'Vegetables');
+  
+  const handleCategoryPress = (categoryName: string) => {
+    console.log('Category pressed:', categoryName);
+    if (selectedCategory === categoryName) {
+      // If same category is pressed, deselect it
+      setSelectedCategory(null);
+    } else {
+      // Otherwise, select the new category
+      setSelectedCategory(categoryName);
+    }
+  };
+
+  useEffect(() => {
+    const handleAgentSelect = (payload: SelectCategoryPayload) => {
+      const targetName = categories.find(
+        (cat) => cat.name.toLowerCase() === payload.category.trim().toLowerCase()
+      )?.name;
+      if (!targetName) return;
+
+      setIsCategoriesExpanded(true);
+      setSelectedCategory((prev) => (prev === targetName ? prev : targetName));
+    };
+
+    const unsubscribe = agentBus.on<SelectCategoryPayload>(AGENT_EVENTS.SelectCategory, handleAgentSelect);
+    return unsubscribe;
+  }, []);
 
   const toggleFlag = () => {
     setFlagType(prev => prev === 'usa' ? 'india' : 'usa');
@@ -267,7 +384,7 @@ export default function HomeScreen() {
   // Calculate scroll padding using the measured glass container height.
   // Safe-area padding comes from the system on iOS, and we add it manually on Android.
   const estimatedContainerHeight = glassContainerHeight > 0 ? glassContainerHeight : 140;
-  const headerSpacing = 20;
+  const headerSpacing = 8;
   const contentGap = 16;
   const headerTopOffset = insets.top + headerSpacing;
   const baseContentOffset = headerSpacing + estimatedContainerHeight + contentGap;
@@ -280,30 +397,43 @@ export default function HomeScreen() {
         style={[styles.fixedGlassContainer, { top: headerTopOffset }]}
       >
         <View onLayout={handleGlassContainerLayout}>
-          <GlassView style={styles.glassContainer}>
+          <ConditionalGlassView style={styles.glassContainer}>
           {/* Header Row: Categories Title and Icon Buttons */}
           <View style={styles.glassHeader}>
-            <ThemedText type="subtitle" style={styles.categoriesTitle}>
-              Categories
-            </ThemedText>
+            <View style={styles.categoriesTitleContainer}>
+              <ThemedText type="subtitle" style={styles.categoriesTitle}>
+                Categories
+              </ThemedText>
+              <TouchableOpacity
+                onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+                style={styles.expandButton}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons 
+                  name={isCategoriesExpanded ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color="#000" 
+                />
+              </TouchableOpacity>
+            </View>
             <View style={styles.iconButtonsRow}>
-              <GlassView style={styles.glassButton}>
+              <ConditionalGlassView style={styles.glassButton}>
                 <Pressable
                   onPress={() => console.log('Cart pressed')}
                   style={styles.iconPressable}
                 >
-                  <Ionicons name="cart-outline" size={22} color="#000" />
+                  <Ionicons name="person-outline" size={22} color="#000" />
                 </Pressable>
-              </GlassView>
-              <GlassView style={styles.glassButton}>
+              </ConditionalGlassView>
+              <ConditionalGlassView style={styles.glassButton}>
                 <Pressable
                   onPress={() => console.log('Notifications pressed')}
                   style={styles.iconPressable}
                 >
                   <Ionicons name="notifications-outline" size={22} color="#000" />
                 </Pressable>
-              </GlassView>
-              <GlassView style={styles.glassButton}>
+              </ConditionalGlassView>
+              <ConditionalGlassView style={styles.glassButton}>
                 <Pressable
                   onPress={toggleFlag}
                   style={styles.iconPressable}
@@ -312,24 +442,45 @@ export default function HomeScreen() {
                     {flagType === 'usa' ? '🇺🇸' : '🇮🇳'}
                   </ThemedText>
                 </Pressable>
-              </GlassView>
+              </ConditionalGlassView>
             </View>
           </View>
           {/* Categories Scrollable List */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesContainer}
-          >
-            {categories.map((category) => (
-              <CategoryCard key={category.id} category={category} />
-            ))}
-          </ScrollView>
-          </GlassView>
+          {isCategoriesExpanded ? (
+            <View style={styles.categoriesGridContainer}>
+              {categories.map((category) => (
+                <CategoryCard 
+                  key={category.id} 
+                  category={category}
+                  isSelected={selectedCategory === category.name}
+                  onPress={() => handleCategoryPress(category.name)}
+                />
+              ))}
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesContainer}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            >
+              {categories.map((category) => (
+                <CategoryCard 
+                  key={category.id} 
+                  category={category}
+                  isSelected={selectedCategory === category.name}
+                  onPress={() => handleCategoryPress(category.name)}
+                />
+              ))}
+            </ScrollView>
+          )}
+          </ConditionalGlassView>
         </View>
       </View>
 
       <ScrollView 
+        ref={scrollViewRef}
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
         contentInsetAdjustmentBehavior="automatic"
@@ -339,16 +490,37 @@ export default function HomeScreen() {
         ]}
       >
         {/* Banner Carousel */}
-        <View style={styles.bannerSection}>
-          <BannerCarousel />
-        </View>
+        {!selectedCategory && (
+          <View style={styles.bannerSection}>
+            <BannerCarousel />
+          </View>
+        )}
 
         {/* Product Sections */}
-        <ProductSection title="Flash Sale 🔥" products={saleProducts} />
-        <ProductSection title="Soda & Drinks 🥤" products={sodaProducts} />
-        <ProductSection title="Candy & Sweets 🍭" products={candyProducts} />
-        <ProductSection title="Snacks 🍪" products={snackProducts} />
-        <ProductSection title="Fresh Vegetables 🥬" products={vegetableProducts} />
+        {selectedCategory ? (
+          // Show filtered products when category is selected
+          filteredProducts.length > 0 ? (
+            <ProductSection 
+              title={`${selectedCategory} Products`} 
+              products={filteredProducts} 
+            />
+          ) : (
+            <View style={styles.emptyState}>
+              <ThemedText style={styles.emptyStateText}>
+                No products found in this category
+              </ThemedText>
+            </View>
+          )
+        ) : (
+          // Show all product sections when no category is selected
+          <>
+            <ProductSection title="Flash Sale 🔥" products={saleProducts} />
+            <ProductSection title="Soda & Drinks 🥤" products={sodaProducts} />
+            <ProductSection title="Candy & Sweets 🍭" products={candyProducts} />
+            <ProductSection title="Snacks 🍪" products={snackProducts} />
+            <ProductSection title="Fresh Vegetables 🥬" products={vegetableProducts} />
+          </>
+        )}
         <View style={{ height: insets.bottom + 20 }} />
       </ScrollView>
     </View>
@@ -369,15 +541,40 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 20,
   },
+  glassContainerAndroid: {
+    backgroundColor: '#fff',
+  },
   glassHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
+  categoriesTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   categoriesTitle: {
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  expandButton: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoriesWrapper: {
+    overflow: 'hidden',
+  },
+  categoriesWrapperCollapsed: {
+    maxHeight: 85,
+  },
+  categoriesGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
   },
   iconButtonsRow: {
     flexDirection: 'row',
@@ -387,6 +584,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
+  },
+  glassFallback: {
+    backgroundColor: '#fff',
+  },
+  glassButtonFallback: {
+    backgroundColor: '#f0f0f0',
   },
   iconPressable: {
     width: '100%',
@@ -454,30 +657,49 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   categoriesContainer: {
-    gap: 12,
+    gap: 8,
   },
   categoryCard: {
     alignItems: 'center',
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 12,
-    minWidth: 80,
-    marginRight: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    padding: 10,
+    width: CATEGORY_CARD_WIDTH,
+    height: CATEGORY_CARD_HEIGHT,
+    marginRight: 0,
+    justifyContent: 'center',
   },
   categoryIconContainer: {
-    marginBottom: 8,
+    marginBottom: 6,
   },
   categoryIcon: {
-    fontSize: 32,
+    fontSize: 24,
   },
   categoryName: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
+    textAlign: 'center',
+    width: '100%',
+    minHeight: 28,
+    lineHeight: 14,
+  },
+  categoryCardSelected: {
+    backgroundColor: '#e8f4f8',
+    borderWidth: 2,
+    borderColor: '#4a5568',
+  },
+  categoryCardPressed: {
+    opacity: 0.7,
+  },
+  emptyState: {
+    paddingVertical: 60,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#999',
     textAlign: 'center',
   },
   section: {
@@ -505,11 +727,6 @@ const styles = StyleSheet.create({
     padding: 8,
     width: 160,
     marginRight: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
     position: 'relative',
   },
   discountBadge: {
