@@ -1,28 +1,28 @@
 import { ThemedText } from '@/components/themed-text';
+import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 import { Ionicons } from '@expo/vector-icons';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
   FlatList,
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BANNER_WIDTH = SCREEN_WIDTH - 32;
 // Calculate category card width: (screen width - glass margins - glass padding - gaps) / cards per row
 // Glass container: 16px left + 16px right margins = 32px, 16px padding each side = 32px total
-// Available width = SCREEN_WIDTH - 64, for 4 cards with 3 gaps of 8px
-const CATEGORY_CARD_WIDTH = Math.floor((SCREEN_WIDTH - 64 - 24) / 4); // 4 cards per row
-const CATEGORY_CARD_HEIGHT = 90;
+// Compact design: smaller square/circular cards for horizontal scroll
+const CATEGORY_CARD_SIZE = 64; // Square cards for compact design
+const CATEGORY_CARD_HEIGHT = 64;
 
 // Mock Data
 const banners = [
@@ -267,50 +267,14 @@ function ProductSection({ title, products }: { title: string; products: Product[
   );
 }
 
-// Conditional Glass Component - uses GlassView when available, View as fallback
-function ConditionalGlassView({ 
-  style, 
-  children 
-}: { 
-  style?: any; 
-  children: React.ReactNode;
-}) {
-  const isGlassAvailable = isLiquidGlassAvailable();
-  
-  // Determine if this is a button (small circular) or container (larger)
-  const isButton = style?.width === 40 && style?.height === 40;
-  
-  if (isGlassAvailable) {
-    // Use GlassView when available, with Android fallback styling
-    return (
-      <GlassView style={[
-        style,
-        Platform.OS === 'android' && styles.glassContainerAndroid
-      ]}>
-        {children}
-      </GlassView>
-    );
-  }
-  
-  // Fallback to View with background styling
-  return (
-    <View style={[
-      style,
-      Platform.OS === 'android' && styles.glassContainerAndroid,
-      !isGlassAvailable && (isButton ? styles.glassButtonFallback : styles.glassFallback)
-    ]}>
-      {children}
-    </View>
-  );
-}
 
 export default function HomeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [flagType, setFlagType] = useState<'india' | 'usa'>('usa');
-  const [glassContainerHeight, setGlassContainerHeight] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
-  const scrollViewRef = useRef<ScrollView>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categorySectionHeight, setCategorySectionHeight] = useState(0);
   
   // Map category names to product categories
   const getProductCategory = (categoryName: string): string | null => {
@@ -332,13 +296,6 @@ export default function HomeScreen() {
       })
     : [];
   
-  // Scroll to top when category changes
-  useEffect(() => {
-    if (scrollViewRef.current) {
-      scrollViewRef.current.scrollTo({ y: 0, animated: true });
-    }
-  }, [selectedCategory]);
-  
   const saleProducts = productsData.filter(p => p.category === 'Sale');
   const sodaProducts = productsData.filter(p => p.category === 'Soda');
   const candyProducts = productsData.filter(p => p.category === 'Candy');
@@ -353,6 +310,8 @@ export default function HomeScreen() {
     } else {
       // Otherwise, select the new category
       setSelectedCategory(categoryName);
+      // Collapse the category list after selection
+      setIsCategoriesExpanded(false);
     }
   };
 
@@ -365,86 +324,64 @@ export default function HomeScreen() {
 
       setIsCategoriesExpanded(true);
       setSelectedCategory((prev) => (prev === targetName ? prev : targetName));
+      // Collapse after a brief delay to allow user to see the selection
+      setTimeout(() => {
+        setIsCategoriesExpanded(false);
+      }, 300);
     };
 
     const unsubscribe = agentBus.on<SelectCategoryPayload>(AGENT_EVENTS.SelectCategory, handleAgentSelect);
     return unsubscribe;
   }, []);
 
-  const toggleFlag = () => {
-    setFlagType(prev => prev === 'usa' ? 'india' : 'usa');
-  };
-
-  const handleGlassContainerLayout = (event: any) => {
+  const handleCategorySectionLayout = (event: any) => {
     const { height } = event.nativeEvent.layout;
-    // Store the height of the glass container
-    setGlassContainerHeight(height);
+    if (height > 0) {
+      setCategorySectionHeight(height);
+    }
   };
 
-  // Calculate scroll padding using the measured glass container height.
-  // Safe-area padding comes from the system on iOS, and we add it manually on Android.
-  const estimatedContainerHeight = glassContainerHeight > 0 ? glassContainerHeight : 140;
-  const headerSpacing = 8;
-  const contentGap = 16;
-  const headerTopOffset = insets.top + headerSpacing;
-  const baseContentOffset = headerSpacing + estimatedContainerHeight + contentGap;
-  const totalTopOffset = baseContentOffset + (Platform.OS === 'ios' ? 0 : insets.top);
+  const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 80;
 
   return (
     <View style={styles.container}>
-      {/* Fixed Glass Container with Categories and Icon Buttons */}
+      {/* Fixed Category Container at Top */}
       <View 
-        style={[styles.fixedGlassContainer, { top: headerTopOffset }]}
+        style={[styles.categorySection, { paddingTop: insets.top + 8 }]}
+        onLayout={handleCategorySectionLayout}
       >
-        <View onLayout={handleGlassContainerLayout}>
-          <ConditionalGlassView style={styles.glassContainer}>
-          {/* Header Row: Categories Title and Icon Buttons */}
-          <View style={styles.glassHeader}>
-            <View style={styles.categoriesTitleContainer}>
-              <ThemedText type="subtitle" style={styles.categoriesTitle}>
-                Categories
-              </ThemedText>
-              <TouchableOpacity
-                onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
-                style={styles.expandButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons 
-                  name={isCategoriesExpanded ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color="#000" 
-                />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.iconButtonsRow}>
-              <ConditionalGlassView style={styles.glassButton}>
-                <Pressable
-                  onPress={() => console.log('Cart pressed')}
-                  style={styles.iconPressable}
-                >
-                  <Ionicons name="person-outline" size={22} color="#000" />
-                </Pressable>
-              </ConditionalGlassView>
-              <ConditionalGlassView style={styles.glassButton}>
-                <Pressable
-                  onPress={() => console.log('Notifications pressed')}
-                  style={styles.iconPressable}
-                >
-                  <Ionicons name="notifications-outline" size={22} color="#000" />
-                </Pressable>
-              </ConditionalGlassView>
-              <ConditionalGlassView style={styles.glassButton}>
-                <Pressable
-                  onPress={toggleFlag}
-                  style={styles.iconPressable}
-                >
-                  <ThemedText style={styles.flagIcon}>
-                    {flagType === 'usa' ? '🇺🇸' : '🇮🇳'}
-                  </ThemedText>
-                </Pressable>
-              </ConditionalGlassView>
+        <View style={styles.categoryContainer}>
+          {/* Search Pill */}
+          <View style={styles.searchPill}>
+            <View style={styles.searchPillContainer}>
+              <Ionicons name="search-outline" size={16} color="#666" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products"
+                placeholderTextColor="#999"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
             </View>
           </View>
+          
+          {/* Expand/Collapse Button */}
+          <TouchableOpacity
+            onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+            style={styles.expandToggleButton}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.6}
+          >
+            <Ionicons 
+              name={isCategoriesExpanded ? "grid-outline" : "apps-outline"} 
+              size={18} 
+              color="#fff" 
+            />
+          </TouchableOpacity>
+          
           {/* Categories Scrollable List */}
           {isCategoriesExpanded ? (
             <View style={styles.categoriesGridContainer}>
@@ -475,27 +412,15 @@ export default function HomeScreen() {
               ))}
             </ScrollView>
           )}
-          </ConditionalGlassView>
         </View>
       </View>
 
       <ScrollView 
-        ref={scrollViewRef}
-        style={styles.scrollView} 
+        style={[styles.scrollView, { marginTop: topOffset }]} 
         showsVerticalScrollIndicator={false}
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: totalTopOffset }
-        ]}
+        contentContainerStyle={styles.scrollContent}
       >
-        {/* Banner Carousel */}
-        {!selectedCategory && (
-          <View style={styles.bannerSection}>
-            <BannerCarousel />
-          </View>
-        )}
-
+        
         {/* Product Sections */}
         {selectedCategory ? (
           // Show filtered products when category is selected
@@ -514,6 +439,10 @@ export default function HomeScreen() {
         ) : (
           // Show all product sections when no category is selected
           <>
+            {/* Banner Carousel */}
+            <View style={styles.bannerSection}>
+              <BannerCarousel />
+            </View>
             <ProductSection title="Flash Sale 🔥" products={saleProducts} />
             <ProductSection title="Soda & Drinks 🥤" products={sodaProducts} />
             <ProductSection title="Candy & Sweets 🍭" products={candyProducts} />
@@ -531,38 +460,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  fixedGlassContainer: {
+  categorySection: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#fff',
     zIndex: 1000,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
   },
-  glassContainer: {
-    padding: 16,
+  categoryContainer: {
+    padding: 12,
+    paddingBottom: 12,
     borderRadius: 20,
-  },
-  glassContainerAndroid: {
     backgroundColor: '#fff',
   },
-  glassHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  categoriesTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  categoriesTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  expandButton: {
-    padding: 4,
+  expandToggleButton: {
+    position: 'absolute',
+    top: 17,
+    right: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
   categoriesWrapper: {
     overflow: 'hidden',
@@ -576,36 +500,12 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  iconButtonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  glassButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  glassFallback: {
-    backgroundColor: '#fff',
-  },
-  glassButtonFallback: {
-    backgroundColor: '#f0f0f0',
-  },
-  iconPressable: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  flagIcon: {
-    fontSize: 20,
-  },
   scrollView: {
     flex: 1,
     backgroundColor: '#fff',
   },
   scrollContent: {
-    // paddingTop is set dynamically based on glass container height
+    // Content flows naturally with category section at top
   },
   header: {
     flexDirection: 'row',
@@ -657,31 +557,57 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   categoriesContainer: {
-    gap: 8,
+    gap: 12,
+    paddingRight: 4,
   },
   categoryCard: {
     alignItems: 'center',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 10,
-    width: CATEGORY_CARD_WIDTH,
+    borderRadius: 32,
+    padding: 6,
+    width: CATEGORY_CARD_SIZE,
     height: CATEGORY_CARD_HEIGHT,
     marginRight: 0,
     justifyContent: 'center',
   },
   categoryIconContainer: {
-    marginBottom: 6,
+    marginBottom: 2,
   },
   categoryIcon: {
     fontSize: 24,
   },
   categoryName: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '600',
     textAlign: 'center',
     width: '100%',
-    minHeight: 28,
-    lineHeight: 14,
+    minHeight: 14,
+    lineHeight: 11,
+    color: '#000',
+  },
+  searchPill: {
+    marginBottom: 8,
+    overflow: 'hidden',
+  },
+  searchPillContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 42,
+    paddingHorizontal: 14,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    backgroundColor: '#f8f8f8',
+    overflow: 'hidden',
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '400',
+    color: '#333',
+    padding: 0,
+    margin: 0,
   },
   categoryCardSelected: {
     backgroundColor: '#e8f4f8',
