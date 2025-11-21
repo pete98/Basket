@@ -1,4 +1,6 @@
 import { ThemedText } from '@/components/themed-text';
+import { getCategoryVisual } from '@/constants/category-visuals';
+import { useCart } from '@/contexts/cart-context';
 import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 import { fetchCategories } from '@/lib/api/categories';
 import { fetchProducts } from '@/lib/api/products';
@@ -6,16 +8,15 @@ import { getAutocompleteSuggestions, searchProducts } from '@/lib/api/search';
 import { Product as ApiProduct, Category } from '@/lib/types/api';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Animated,
   Dimensions,
   FlatList,
   Image,
-  Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
   View
@@ -27,8 +28,47 @@ const BANNER_WIDTH = SCREEN_WIDTH - 16;
 // Calculate category card width: (screen width - glass margins - glass padding - gaps) / cards per row
 // Glass container: 16px left + 16px right margins = 32px, 16px padding each side = 32px total
 // Compact design: smaller square/circular cards for horizontal scroll
-const CATEGORY_CARD_SIZE = 64; // Square cards for compact design
+const CATEGORY_CARD_SIZE = 64; // Compact square cards
 const CATEGORY_CARD_HEIGHT = 64;
+// Product card width for horizontal lists - shows ~2.5 cards at once
+const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 24) / 2.5; // Screen width - padding (16*2) - gaps (12*2) / 2.5 cards
+
+// Default category display order for home page
+// Match by both code and displayName for flexibility
+const DEFAULT_CATEGORY_CODES = [
+  'DAIRY_EGGS',
+  'SNACKS_CHIPS',
+  'BEV_SODA',
+  'FROZEN_MEALS',
+  'FRESH_PRODUCE',
+];
+
+const DEFAULT_CATEGORY_NAMES = [
+  'Dairy & Eggs',
+  'Dairy',
+  'Snacks',
+  'Beverages',
+  'Frozen',
+  'Frozen & Pantry Meals',
+  'Fresh Produce',
+  'Produce',
+];
+
+function tintWithAlpha(hexColor: string, alpha: number, fallback: string) {
+  if (!hexColor) return fallback;
+  const sanitized = hexColor.replace('#', '');
+  const normalized = sanitized.length === 3
+    ? sanitized.split('').map((char) => char + char).join('')
+    : sanitized;
+  if (normalized.length !== 6) return fallback;
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  if ([r, g, b].some((value) => Number.isNaN(value))) {
+    return fallback;
+  }
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
 
 // Mock Data
 const banners = [
@@ -48,6 +88,29 @@ interface UIProduct {
   category: string;
   inStock: boolean;
   discount?: number;
+  weight?: number;
+  weightUnit?: string;
+  calories?: number;
+  brand?: string;
+  description?: string;
+  stockQuantity?: number;
+  popularityScore?: number;
+}
+
+// Helper function to format weight with unit
+function formatWeight(weight?: number, weightUnit?: string): string {
+  if (!weight) return '';
+  
+  const unit = weightUnit?.toUpperCase();
+  if (unit === 'GRAM') {
+    return `${weight}g`;
+  } else if (unit === 'OZ') {
+    return `${weight}oz`;
+  } else if (weightUnit) {
+    // Fallback for other units
+    return `${weight} ${weightUnit.toLowerCase()}`;
+  }
+  return weight.toString();
 }
 
 // Helper function to map API product (InventoryResponseDTO) to UI product
@@ -62,6 +125,13 @@ function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {
     image: apiProduct.imageUrl,
     category: apiProduct.categories || apiProduct.subCategory || '',
     inStock: apiProduct.stockQuantity > 0,
+    weight: apiProduct.weight,
+    weightUnit: apiProduct.weightUnit,
+    calories: apiProduct.calories,
+    brand: apiProduct.brand,
+    description: apiProduct.description,
+    stockQuantity: apiProduct.stockQuantity,
+    popularityScore: apiProduct.popularityScore,
   };
 }
 
@@ -150,20 +220,6 @@ function BannerCarousel() {
   );
 }
 
-// Map category codes to emoji icons
-const categoryIconMap: Record<string, string> = {
-  'FRUIT': '🍎',
-  'DAIRY': '🥛',
-  'VEGETABLES': '🥬',
-  'MEAT': '🥩',
-  'BAKERY': '🍞',
-  'SNACKS': '🍿',
-  'BEVERAGES': '🥤',
-  'FROZEN': '🧊',
-  'CANDY': '🍭',
-  'GROCERY': '🛒',
-};
-
 function CategoryCard({ 
   category, 
   isSelected, 
@@ -173,20 +229,35 @@ function CategoryCard({
   isSelected: boolean; 
   onPress: () => void;
 }) {
-  const icon = categoryIconMap[category.code] || '📦';
+  const visual = getCategoryVisual(category);
+  const selectionBackground = tintWithAlpha(visual.accentColor, 0.18, visual.backgroundColor);
   
   return (
     <TouchableOpacity
       style={[
         styles.categoryCard,
-        isSelected && styles.categoryCardSelected
+        isSelected && styles.categoryCardSelected,
+        isSelected && {
+          backgroundColor: selectionBackground,
+        },
       ]}
       onPress={onPress}
       activeOpacity={0.7}
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
-      <View style={styles.categoryIconContainer} pointerEvents="none">
-        <ThemedText style={styles.categoryIcon}>{icon}</ThemedText>
+      <View 
+        style={[
+          styles.categoryIconContainer,
+          { backgroundColor: visual.backgroundColor },
+        ]}
+        pointerEvents="none"
+      >
+        <Image
+          source={{ uri: visual.iconUri }}
+          style={styles.categoryIconImage}
+          resizeMode="contain"
+          accessibilityLabel={`${category.displayName} icon`}
+        />
       </View>
       <ThemedText style={styles.categoryName} numberOfLines={2} pointerEvents="none">
         {category.displayName}
@@ -196,231 +267,197 @@ function CategoryCard({
 }
 
 function ProductCard({ product }: { product: UIProduct }) {
+  const router = useRouter();
+  const { addItem, updateQuantity, removeItem, state } = useCart();
+  
+  // Find if this product is in cart and get its quantity
+  const cartItem = state.items.find(item => item.id === product.id);
+  const quantity = cartItem?.quantity || 0;
+  
   const handleAddToCart = () => {
-    console.log(`Adding ${product.name} to cart`);
+    addItem({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image || '',
+    });
   };
+
+  const handleIncrement = () => {
+    if (quantity === 0) {
+      handleAddToCart();
+    } else {
+      updateQuantity(product.id, quantity + 1);
+    }
+  };
+
+  const handleDecrement = () => {
+    if (quantity > 1) {
+      updateQuantity(product.id, quantity - 1);
+    } else if (quantity === 1) {
+      removeItem(product.id);
+    }
+  };
+
+  const handleProductPress = () => {
+    router.push({
+      pathname: '/product-detail',
+      params: {
+        id: product.id,
+        name: product.name,
+        price: product.price.toString(),
+        image: product.image || '',
+        brand: product.brand || '',
+        description: product.description || '',
+        weight: product.weight?.toString() || '',
+        weightUnit: product.weightUnit || '',
+        calories: product.calories?.toString() || '',
+        stockQuantity: product.stockQuantity?.toString() || '100',
+        popularityScore: product.popularityScore?.toString() || '999',
+        category: product.category || '',
+      },
+    });
+  };
+
+  const formattedWeight = formatWeight(product.weight, product.weightUnit);
+  const weightCaloriesText = 
+    formattedWeight && product.calories 
+      ? `${formattedWeight} • ${product.calories} cals`
+      : formattedWeight 
+        ? formattedWeight
+        : product.calories 
+          ? `${product.calories} cals`
+          : '';
 
   return (
     <View style={styles.productCard}>
-      {product.discount && (
-        <View style={styles.discountBadge}>
-          <ThemedText style={styles.discountText}>{product.discount}% OFF</ThemedText>
+      {/* Quantity Counter or Add to Cart Icon - Top Right */}
+      {quantity > 0 ? (
+        <View style={styles.quantityCounter}>
+          <TouchableOpacity
+            style={styles.quantityButton}
+            onPress={handleDecrement}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.6}
+          >
+            <View style={styles.quantityButtonInner}>
+              <Ionicons name="remove" size={16} color="#007AFF" />
+            </View>
+          </TouchableOpacity>
+          <View style={styles.quantityNumberContainer}>
+            <Text style={styles.quantityText}>{quantity}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.quantityButton}
+            onPress={handleIncrement}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.6}
+          >
+            <View style={styles.quantityButtonInner}>
+              <Ionicons name="add" size={16} color="#007AFF" />
+            </View>
+          </TouchableOpacity>
         </View>
-      )}
-      {product.image ? (
-        <Image source={{ uri: product.image }} style={styles.productImage} />
       ) : (
-        <View style={[styles.productImage, styles.productImagePlaceholder]}>
-          <Ionicons name="image-outline" size={32} color="#ccc" />
-        </View>
+        <TouchableOpacity
+          style={styles.addToCartIcon}
+          onPress={handleAddToCart}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="add" size={20} color="#000" />
+        </TouchableOpacity>
       )}
-      <ThemedText style={styles.productName} numberOfLines={2}>
-        {product.name}
-      </ThemedText>
-      <View style={styles.productPriceContainer}>
-        <ThemedText style={styles.productPrice}>${product.price.toFixed(2)}</ThemedText>
-        {product.originalPrice && (
-          <ThemedText style={styles.originalPrice}>${product.originalPrice.toFixed(2)}</ThemedText>
-        )}
-      </View>
-      <Pressable
-        style={styles.addToCartButton}
-        onPress={handleAddToCart}
-        android_ripple={{ color: '#4a5568' }}
+
+      {/* Tappable Product Content */}
+      <TouchableOpacity
+        onPress={handleProductPress}
+        activeOpacity={0.7}
+        style={styles.productContent}
       >
-        <Ionicons name="add" size={18} color="#fff" />
-        <ThemedText style={styles.addToCartText}>Add</ThemedText>
-      </Pressable>
+        {/* Product Image */}
+        {product.image ? (
+          <Image 
+            source={{ uri: product.image }} 
+            style={styles.productImage}
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={[styles.productImage, styles.productImagePlaceholder]}>
+            <Ionicons name="image-outline" size={32} color="#ccc" />
+          </View>
+        )}
+
+        {/* Product Name */}
+        <ThemedText style={styles.productName} numberOfLines={2}>
+          {product.name}
+        </ThemedText>
+
+        {/* Weight and Calories */}
+        {weightCaloriesText ? (
+          <ThemedText style={styles.productWeightCalories}>
+            {weightCaloriesText}
+          </ThemedText>
+        ) : null}
+
+        {/* Price */}
+        <ThemedText style={styles.productPrice}>${product.price.toFixed(2)}</ThemedText>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function ProductSection({ title, products }: { title: string; products: UIProduct[] }) {
-  if (!products || products.length === 0) {
-    return null;
-  }
+function ProductSection({ 
+  title, 
+  products,
+  iconUri,
+}: { 
+  title: string; 
+  products: UIProduct[];
+  iconUri?: string;
+ }) {
+  // Show section even if empty (for debugging - helps see which categories are loaded)
+  const hasProducts = products && products.length > 0;
   
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
-        <ThemedText type="subtitle" style={styles.sectionTitle}>
-          {title}
-        </ThemedText>
-        <TouchableOpacity onPress={() => console.log(`See all ${title}`)}>
-          <ThemedText style={styles.seeAllText}>See All</ThemedText>
-        </TouchableOpacity>
-      </View>
-      <FlatList
-        data={products}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.productList}
-        renderItem={({ item }) => <ProductCard product={item} />}
-      />
-    </View>
-  );
-}
-
-type SearchFieldVariant = 'hero' | 'header';
-
-interface SearchFieldProps {
-  value: string;
-  placeholder: string;
-  onChangeText: (text: string) => void;
-  onFocus: () => void;
-  onBlur: () => void;
-  onSubmit: () => void;
-  onClear: () => void;
-  isFocused: boolean;
-  suggestions: string[];
-  onSelectSuggestion: (suggestion: string) => void;
-  showSuggestions: boolean;
-  suggestionsOpacity: Animated.Value;
-  loadingSuggestions: boolean;
-  showBackButton?: boolean;
-  onBack?: () => void;
-  variant: SearchFieldVariant;
-  quickPicks?: string[];
-  onQuickPickPress?: (query: string) => void;
-  helperText?: string;
-}
-
-function SearchField({
-  value,
-  placeholder,
-  onChangeText,
-  onFocus,
-  onBlur,
-  onSubmit,
-  onClear,
-  isFocused,
-  suggestions,
-  onSelectSuggestion,
-  showSuggestions,
-  suggestionsOpacity,
-  loadingSuggestions,
-  showBackButton,
-  onBack,
-  variant,
-  quickPicks,
-  onQuickPickPress,
-  helperText,
-}: SearchFieldProps) {
-  return (
-    <View
-      style={[
-        styles.searchFieldWrapper,
-        variant === 'hero' ? styles.searchFieldWrapperHero : styles.searchFieldWrapperHeader,
-      ]}
-    >
-      <View style={styles.searchPillContainer}>
-        {showBackButton && (
-          <TouchableOpacity
-            onPress={onBack}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.6}
-            style={styles.backButtonInSearch}
-          >
-            <Ionicons name="arrow-back" size={20} color="#666" />
+        <View style={styles.sectionTitleRow}>
+          {iconUri && (
+            <Image
+              source={{ uri: iconUri }}
+              style={styles.sectionTitleIcon}
+              resizeMode="contain"
+            />
+          )}
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            {title}
+          </ThemedText>
+        </View>
+        {hasProducts && (
+          <TouchableOpacity onPress={() => console.log(`See all ${title}`)}>
+            <ThemedText style={styles.seeAllText}>See All</ThemedText>
           </TouchableOpacity>
         )}
-        <Ionicons name="search-outline" size={16} color="#666" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder={placeholder}
-          placeholderTextColor="#999"
-          value={value}
-          onChangeText={onChangeText}
-          onFocus={onFocus}
-          onBlur={onBlur}
-          onSubmitEditing={() => {
-            onSubmit();
-          }}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
+      </View>
+      {hasProducts ? (
+        <FlatList
+          data={products}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.productList}
+          renderItem={({ item }) => (
+            <View style={styles.productCardWrapper}>
+              <ProductCard product={item} />
+            </View>
+          )}
         />
-        {value.length > 0 && (
-          <TouchableOpacity
-            onPress={onClear}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.6}
-          >
-            <Ionicons name="close-circle" size={18} color="#999" />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {helperText && (
-        <View style={styles.searchHelperRow}>
-          <Ionicons name="star-outline" size={14} color="#6b7280" style={styles.searchHelperIcon} />
-          <ThemedText style={styles.searchHelperText}>{helperText}</ThemedText>
-        </View>
-      )}
-
-      {quickPicks && quickPicks.length > 0 && (
-        <View style={styles.quickPickRow}>
-          {quickPicks.map((label) => (
-            <TouchableOpacity
-              key={label}
-              style={styles.quickPickPill}
-              activeOpacity={0.8}
-              onPress={() => onQuickPickPress?.(label)}
-            >
-              <Ionicons name="flash-outline" size={14} color="#4b5563" style={styles.quickPickIcon} />
-              <ThemedText style={styles.quickPickText}>{label}</ThemedText>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
-      {showSuggestions && suggestions.length > 0 && (
-        <Animated.View
-          style={[
-            styles.autocompleteContainer,
-            {
-              opacity: suggestionsOpacity,
-              transform: [
-                {
-                  translateY: suggestionsOpacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-10, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View style={styles.autocompleteHeader}>
-            <ThemedText style={styles.autocompleteHeaderText}>Suggestions</ThemedText>
-          </View>
-          {suggestions.map((suggestion, index) => (
-            <TouchableOpacity
-              key={`${suggestion}-${index}`}
-              style={[
-                styles.autocompleteItem,
-                index === suggestions.length - 1 && styles.autocompleteItemLast,
-              ]}
-              onPress={() => onSelectSuggestion(suggestion)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.autocompleteIconContainer}>
-                <Ionicons name="search-outline" size={18} color="#4a5568" />
-              </View>
-              <ThemedText style={styles.autocompleteText} numberOfLines={1}>
-                {suggestion}
-              </ThemedText>
-              <Ionicons name="arrow-forward-outline" size={16} color="#999" />
-            </TouchableOpacity>
-          ))}
-        </Animated.View>
-      )}
-
-      {isFocused && loadingSuggestions && (
-        <View style={styles.autocompleteLoadingContainer}>
-          <ActivityIndicator size="small" color="#4a5568" />
-          <ThemedText style={styles.autocompleteLoadingText}>Finding suggestions...</ThemedText>
+      ) : (
+        <View style={styles.emptyState}>
+          <ThemedText style={styles.emptyStateText}>
+            No products in this category yet
+          </ThemedText>
         </View>
       )}
     </View>
@@ -457,10 +494,7 @@ export default function HomeScreen() {
   // Debounce timers
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Animation values
-  const autocompleteOpacity = useRef(new Animated.Value(0)).current;
-  const searchModeOpacity = useRef(new Animated.Value(0)).current;
+  const autocompleteAbortControllerRef = useRef<AbortController | null>(null);
   
   // Fetch categories on mount
   useEffect(() => {
@@ -469,6 +503,7 @@ export default function HomeScreen() {
         setCategoriesLoading(true);
         setCategoriesError(null);
         const data = await fetchCategories();
+        console.log('Loaded categories:', data);
         setCategories(data || []);
       } catch (error) {
         setCategoriesError(error instanceof Error ? error.message : 'Failed to load categories');
@@ -600,30 +635,58 @@ export default function HomeScreen() {
 
   // Debounced autocomplete - triggers after 2+ characters (matching Next.js pattern)
   useEffect(() => {
+    // Cancel any pending autocomplete request
+    if (autocompleteAbortControllerRef.current) {
+      autocompleteAbortControllerRef.current.abort();
+    }
+    
     if (autocompleteTimerRef.current) {
       clearTimeout(autocompleteTimerRef.current);
     }
     
     if (searchQuery.trim().length >= 2) {
       autocompleteTimerRef.current = setTimeout(async () => {
+        // Create new AbortController for this request
+        const abortController = new AbortController();
+        autocompleteAbortControllerRef.current = abortController;
+        
         try {
           setAutocompleteLoading(true);
-          const response = await getAutocompleteSuggestions({ query: searchQuery, limit: 5 });
-          setAutocompleteSuggestions(response.suggestions || []);
+          const response = await getAutocompleteSuggestions({ 
+            query: searchQuery, 
+            limit: 5,
+            signal: abortController.signal,
+          });
+          
+          // Only update if request wasn't cancelled
+          if (!abortController.signal.aborted) {
+            setAutocompleteSuggestions(response.suggestions || []);
+          }
         } catch (error) {
-          // Silently fail autocomplete - it's optional functionality
-          setAutocompleteSuggestions([]);
+          // Ignore abort errors, only handle other errors
+          if (error instanceof Error && error.name !== 'AbortError') {
+            // Silently fail autocomplete - it's optional functionality
+            if (!abortController.signal.aborted) {
+              setAutocompleteSuggestions([]);
+            }
+          }
         } finally {
-          setAutocompleteLoading(false);
+          if (!abortController.signal.aborted) {
+            setAutocompleteLoading(false);
+          }
         }
-      }, 300); // 300ms debounce
+      }, 150); // Reduced to 150ms debounce for faster response
     } else {
       setAutocompleteSuggestions([]);
+      setAutocompleteLoading(false);
     }
     
     return () => {
       if (autocompleteTimerRef.current) {
         clearTimeout(autocompleteTimerRef.current);
+      }
+      if (autocompleteAbortControllerRef.current) {
+        autocompleteAbortControllerRef.current.abort();
       }
     };
   }, [searchQuery]);
@@ -651,53 +714,35 @@ export default function HomeScreen() {
     // Trigger search immediately with the selected suggestion
     performSearch(suggestion);
   }, [performSearch]);
-
-  const handleQuickPickPress = useCallback((label: string) => {
-    handleSuggestionSelect(label);
-  }, [handleSuggestionSelect]);
-
-  // Handle back button - exit search mode and return to home
-  const handleBackFromSearch = useCallback(() => {
-    setSearchQuery('');
-    setSearchResults([]);
-    setAutocompleteSuggestions([]);
-    setIsSearchFocused(false);
-    setSelectedCategoryId(null);
-    // Clear any pending search timers
-    if (searchTimerRef.current) {
-      clearTimeout(searchTimerRef.current);
-    }
-  }, []);
-
-  // Check if we're in search mode
-  const isInSearchMode = isSearchFocused || searchQuery.trim().length > 0;
-
-  // Animate autocomplete visibility
-  useEffect(() => {
-    Animated.timing(autocompleteOpacity, {
-      toValue: isSearchFocused && autocompleteSuggestions.length > 0 ? 1 : 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [isSearchFocused, autocompleteSuggestions.length, autocompleteOpacity]);
-
-  // Animate search mode transition
-  useEffect(() => {
-    Animated.timing(searchModeOpacity, {
-      toValue: isInSearchMode ? 1 : 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start();
-  }, [isInSearchMode, searchModeOpacity]);
   
   // Filter products based on selected category
   const selectedCategory = categories.find(c => c.id === selectedCategoryId);
+  const selectedCategoryVisual = selectedCategory ? getCategoryVisual(selectedCategory) : null;
   const filteredProducts = selectedCategory 
     ? products.filter(p => 
         p.category === selectedCategory.displayName || 
         p.category === selectedCategory.code
       )
     : [];
+  
+  // Sort categories for the selector (horizontal scroll and grid)
+  // Use displayOrder from API if available, otherwise maintain original order
+  const sortedCategories = [...categories].sort((a, b) => {
+    const orderA = a.displayOrder;
+    const orderB = b.displayOrder;
+    
+    // If both have displayOrder, sort by it
+    if (orderA !== undefined && orderB !== undefined) {
+      return orderA - orderB;
+    }
+    
+    // If only one has displayOrder, prioritize it
+    if (orderA !== undefined) return -1;
+    if (orderB !== undefined) return 1;
+    
+    // Otherwise maintain original order
+    return 0;
+  });
   
   // Group products by category for display sections
   const productsByCategory = products.reduce((acc, product) => {
@@ -707,17 +752,101 @@ export default function HomeScreen() {
     acc[product.category].push(product);
     return acc;
   }, {} as Record<string, UIProduct[]>);
-
-  const quickFilterSuggestions = useMemo(() => {
-    if (categories.length > 0) {
-      return categories
-        .slice(0, 6)
-        .map((category) => category.displayName || category.code)
-        .filter((label): label is string => Boolean(label));
-    }
-    return ['Fresh produce', 'Breakfast essentials', 'Organic snacks', 'Dairy picks', 'Beverages'];
-  }, [categories]);
-
+  
+  // Sort categories by displayOrder from API, or fallback to predefined order
+  // Check if any categories have displayOrder (API-driven) vs using hardcoded list
+  const hasDisplayOrderFromApi = categories.some(c => c.displayOrder !== undefined);
+  console.log('Categories loaded:', categories.length, 'Has displayOrder:', hasDisplayOrderFromApi);
+  
+  // Filter and sort categories to show (based on API displayOrder or default list)
+  const categoriesToShow = categories
+    .filter((category) => {
+      // If API provides displayOrder, show all categories with displayOrder
+      // Otherwise, fallback to hardcoded default list
+      if (hasDisplayOrderFromApi) {
+        return category.displayOrder !== undefined;
+      }
+      
+      // Fallback: Match by category code or displayName
+      const codeMatch = DEFAULT_CATEGORY_CODES.some(
+        code => category.code.toUpperCase() === code.toUpperCase()
+      );
+      const nameMatch = DEFAULT_CATEGORY_NAMES.some(
+        name => category.displayName.toLowerCase().includes(name.toLowerCase()) ||
+                name.toLowerCase().includes(category.displayName.toLowerCase())
+      );
+      return codeMatch || nameMatch;
+    })
+    .sort((a, b) => {
+      // Prefer displayOrder from API if available
+      const orderA = a.displayOrder;
+      const orderB = b.displayOrder;
+      
+      if (orderA !== undefined && orderB !== undefined) {
+        return orderA - orderB;
+      }
+      
+      // If only one has displayOrder, prioritize it
+      if (orderA !== undefined) return -1;
+      if (orderB !== undefined) return 1;
+      
+      // Fallback to hardcoded order - check both code and displayName
+      const getCategoryIndex = (category: Category): number => {
+        // First try to match by code
+        const codeIndex = DEFAULT_CATEGORY_CODES.findIndex(
+          code => category.code.toUpperCase() === code.toUpperCase()
+        );
+        if (codeIndex !== -1) return codeIndex;
+        
+        // Then try to match by displayName
+        const nameIndex = DEFAULT_CATEGORY_NAMES.findIndex(
+          name => category.displayName.toLowerCase().includes(name.toLowerCase()) ||
+                  name.toLowerCase().includes(category.displayName.toLowerCase())
+        );
+        if (nameIndex !== -1) {
+          // Map name index to code index (they should align)
+          // DAIRY_EGGS=0, SNACKS_CHIPS=1, BEV_SODA=2, FROZEN_MEALS=3, FRESH_PRODUCE=4
+          if (nameIndex < 2) return 0; // Dairy
+          if (nameIndex === 2) return 1; // Snacks
+          if (nameIndex === 3) return 2; // Beverages
+          if (nameIndex >= 4 && nameIndex <= 5) return 3; // Frozen
+          if (nameIndex >= 6) return 4; // Produce
+        }
+        return -1;
+      };
+      
+      const indexA = getCategoryIndex(a);
+      const indexB = getCategoryIndex(b);
+      
+      // If not found in order, put at end
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+  
+  // Map categories to their products (categories without products will have empty arrays)
+  const sortedCategoryEntries = categoriesToShow.map((category) => {
+    // Try to find products for this category by matching category code or displayName
+    const categoryProducts = Object.entries(productsByCategory)
+      .filter(([categoryKey]) => {
+        // Match by category code, displayName, or any variation
+        return category.code === categoryKey || 
+               category.displayName === categoryKey ||
+               category.code.toLowerCase() === categoryKey.toLowerCase() ||
+               category.displayName.toLowerCase() === categoryKey.toLowerCase();
+      })
+      .flatMap(([, products]) => products);
+    
+    return {
+      category,
+      categoryCode: category.code,
+      categoryProducts,
+    };
+  });
+  
+  console.log('Categories to show:', categoriesToShow.length, categoriesToShow.map(c => c.displayName));
+  console.log('Sorted category entries:', sortedCategoryEntries.length);
+  
   const handleCategoryPress = (categoryId: number) => {
     console.log('Category pressed:', categoryId);
     if (selectedCategoryId === categoryId) {
@@ -754,193 +883,155 @@ export default function HomeScreen() {
     }
   };
 
-  // Calculate top offset based on mode
-  const topOffset = isInSearchMode 
-    ? insets.top + 70 // Search mode header height
-    : (categorySectionHeight > 0 ? categorySectionHeight : insets.top + 80);
+  const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 80;
 
   return (
     <View style={styles.container}>
-      {/* Fixed Category Container at Top - Hide when in search mode */}
-      {!isInSearchMode && (
-        <View 
-          style={[styles.categorySection, { paddingTop: insets.top + 8 }]}
-          onLayout={handleCategorySectionLayout}
-        >
-          <View style={styles.categoryContainer}>
-            <SearchField
-              value={searchQuery}
-              placeholder={
-                searchQuery.length > 0
-                  ? "Continue searching..."
-                  : "Search for products, brands, or categories"
-              }
-              onChangeText={setSearchQuery}
-              onFocus={() => {
-                setIsSearchFocused(true);
-                setSearchResults([]);
-              }}
-              onBlur={() => {
-                setTimeout(() => setIsSearchFocused(false), 200);
-              }}
-              onSubmit={() => {
-                handleSearchSubmit();
-                setIsSearchFocused(false);
-              }}
-              onClear={() => {
-                setSearchQuery('');
-                setSearchResults([]);
-                setAutocompleteSuggestions([]);
-                setIsSearchFocused(false);
-              }}
-              isFocused={isSearchFocused}
-              suggestions={autocompleteSuggestions}
-              onSelectSuggestion={(suggestion) => {
-                handleSuggestionSelect(suggestion);
-                setIsSearchFocused(false);
-              }}
-              showSuggestions={isSearchFocused && autocompleteSuggestions.length > 0}
-              suggestionsOpacity={autocompleteOpacity}
-              loadingSuggestions={autocompleteLoading && searchQuery.trim().length >= 2}
-              variant="hero"
-              quickPicks={!isSearchFocused ? quickFilterSuggestions : undefined}
-              onQuickPickPress={handleQuickPickPress}
-              helperText={
-                !isSearchFocused && searchQuery.trim().length === 0
-                  ? 'Jump back in with these quick picks'
-                  : undefined
-              }
-            />
-
-            <View style={styles.categoryActionsRow}>
-              <ThemedText style={styles.categoryActionsLabel}>
-                {isCategoriesExpanded ? 'All categories' : 'Browse by category'}
-              </ThemedText>
-              <TouchableOpacity
-                onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
-                style={styles.expandToggleButton}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                activeOpacity={0.6}
-              >
-                <Ionicons
-                  name={isCategoriesExpanded ? "grid-outline" : "apps-outline"}
-                  size={18}
-                  color="#fff"
-                />
-              </TouchableOpacity>
+      {/* Fixed Category Container at Top */}
+      <View 
+        style={[styles.categorySection, { paddingTop: insets.top + 8 }]}
+        onLayout={handleCategorySectionLayout}
+      >
+        <View style={styles.categoryContainer}>
+          {/* Search Pill */}
+          <View style={styles.searchPill}>
+            <View style={styles.searchPillContainer}>
+              {(isSearchFocused || searchQuery.trim().length > 0) && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setIsSearchFocused(false);
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    setAutocompleteSuggestions([]);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.backButton}
+                >
+                  <Ionicons name="arrow-back" size={22} color="#666" />
+                </TouchableOpacity>
+              )}
+              {!isSearchFocused && searchQuery.trim().length === 0 && (
+                <Ionicons name="search-outline" size={20} color="#666" />
+              )}
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search products"
+                placeholderTextColor="#999"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onFocus={() => {
+                  setIsSearchFocused(true);
+                  // Clear previous search results when focusing on search
+                  setSearchResults([]);
+                }}
+                onBlur={() => {
+                  // Delay hiding to allow suggestion selection
+                  setTimeout(() => setIsSearchFocused(false), 200);
+                }}
+                onSubmitEditing={() => {
+                  handleSearchSubmit();
+                  setIsSearchFocused(false);
+                }}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                    setAutocompleteSuggestions([]);
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.clearButton}
+                >
+                  <Ionicons name="close-circle" size={22} color="#666" />
+                </TouchableOpacity>
+              )}
             </View>
-            
-            {/* Categories Scrollable List */}
-            {categoriesLoading ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="small" color="#4a5568" />
-              </View>
-            ) : categoriesError ? (
-              <View style={styles.errorContainer}>
-                <ThemedText style={styles.errorText}>{categoriesError}</ThemedText>
-              </View>
-            ) : isCategoriesExpanded ? (
-              <View style={styles.categoriesGridContainer}>
-                {categories.length > 0 && categories.map((category) => (
-                  <CategoryCard 
-                    key={category.id} 
-                    category={category}
-                    isSelected={selectedCategoryId === category.id}
-                    onPress={() => handleCategoryPress(category.id)}
-                  />
+            {/* Autocomplete Suggestions - Only show when search bar is focused */}
+            {isSearchFocused && autocompleteSuggestions.length > 0 && (
+              <View style={styles.autocompleteContainer}>
+                {autocompleteSuggestions.map((suggestion, index) => (
+                  <TouchableOpacity
+                    key={`${suggestion}-${index}`}
+                    style={styles.autocompleteItem}
+                    onPress={() => {
+                      handleSuggestionSelect(suggestion);
+                      setIsSearchFocused(false);
+                    }}
+                  >
+                    <Ionicons name="search-outline" size={16} color="#666" style={{ marginRight: 12 }} />
+                    <ThemedText style={styles.autocompleteText}>
+                      {suggestion}
+                    </ThemedText>
+                  </TouchableOpacity>
                 ))}
               </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoriesContainer}
-                scrollEnabled={true}
-                nestedScrollEnabled={true}
-              >
-                {categories.length > 0 && categories.map((category) => (
-                  <CategoryCard 
-                    key={category.id} 
-                    category={category}
-                    isSelected={selectedCategoryId === category.id}
-                    onPress={() => handleCategoryPress(category.id)}
-                  />
-                ))}
-              </ScrollView>
             )}
           </View>
+          
+          {/* Expand/Collapse Button - Hide when search is active */}
+          {!isSearchFocused && searchQuery.trim().length === 0 && (
+            <TouchableOpacity
+              onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+              style={styles.expandToggleButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.6}
+            >
+              <Ionicons 
+                name={isCategoriesExpanded ? "grid-outline" : "apps-outline"} 
+                size={18} 
+                color="#fff" 
+              />
+            </TouchableOpacity>
+          )}
+          
+          {/* Categories Scrollable List - Hide when search is active */}
+          {!isSearchFocused && searchQuery.trim().length === 0 && (
+            <>
+              {categoriesLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#4a5568" />
+                </View>
+              ) : categoriesError ? (
+                <View style={styles.errorContainer}>
+                  <ThemedText style={styles.errorText}>{categoriesError}</ThemedText>
+                </View>
+              ) : isCategoriesExpanded ? (
+            <View style={styles.categoriesGridContainer}>
+              {sortedCategories.length > 0 && sortedCategories.map((category) => (
+                <CategoryCard 
+                  key={category.id} 
+                  category={category}
+                  isSelected={selectedCategoryId === category.id}
+                  onPress={() => handleCategoryPress(category.id)}
+                />
+              ))}
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesContainer}
+              scrollEnabled={true}
+              nestedScrollEnabled={true}
+            >
+              {sortedCategories.length > 0 && sortedCategories.map((category) => (
+                <CategoryCard 
+                  key={category.id} 
+                  category={category}
+                  isSelected={selectedCategoryId === category.id}
+                  onPress={() => handleCategoryPress(category.id)}
+                />
+              ))}
+            </ScrollView>
+          )}
+            </>
+          )}
         </View>
-      )}
-
-      {/* Search Mode Header - Show when in search mode */}
-      {isInSearchMode && (
-        <Animated.View
-          style={[
-            styles.searchModeHeader,
-            { paddingTop: insets.top + 8 },
-            {
-              opacity: searchModeOpacity,
-              transform: [
-                {
-                  translateY: searchModeOpacity.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [-12, 0],
-                  }),
-                },
-              ],
-            },
-          ]}
-        >
-          <View style={styles.searchModeHeaderContent}>
-            <SearchField
-              value={searchQuery}
-              placeholder={
-                searchQuery.length > 0
-                  ? "Continue searching..."
-                  : "Search for products, brands, or categories"
-              }
-              onChangeText={setSearchQuery}
-              onFocus={() => {
-                setIsSearchFocused(true);
-                setSearchResults([]);
-              }}
-              onBlur={() => {
-                setTimeout(() => setIsSearchFocused(false), 200);
-              }}
-              onSubmit={() => {
-                handleSearchSubmit();
-                setIsSearchFocused(false);
-              }}
-              onClear={() => {
-                setSearchQuery('');
-                setSearchResults([]);
-                setAutocompleteSuggestions([]);
-              }}
-              isFocused={isSearchFocused}
-              suggestions={autocompleteSuggestions}
-              onSelectSuggestion={(suggestion) => {
-                handleSuggestionSelect(suggestion);
-                setIsSearchFocused(false);
-              }}
-              showSuggestions={isSearchFocused && autocompleteSuggestions.length > 0}
-              suggestionsOpacity={autocompleteOpacity}
-              loadingSuggestions={autocompleteLoading && searchQuery.trim().length >= 2}
-              showBackButton
-              onBack={handleBackFromSearch}
-              variant="header"
-              quickPicks={
-                searchQuery.trim().length === 0 ? quickFilterSuggestions.slice(0, 3) : undefined
-              }
-              onQuickPickPress={handleQuickPickPress}
-              helperText={
-                searchQuery.trim().length === 0
-                  ? 'Need ideas? Try one of the suggested searches below'
-                  : undefined
-              }
-            />
-          </View>
-        </Animated.View>
-      )}
+      </View>
 
       {/* Use FlatList for search results to avoid nested VirtualizedList, ScrollView for other content */}
       {isSearchFocused || searchQuery.trim().length > 0 ? (
@@ -957,8 +1048,8 @@ export default function HomeScreen() {
               columnWrapperStyle={styles.searchResultsRow}
               ListHeaderComponent={
                 <View style={styles.sectionHeader}>
-                  <ThemedText type="subtitle" style={styles.sectionTitle}>
-                    {searchResults.length} {searchResults.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+                  <ThemedText type="subtitle" style={[styles.sectionTitle, { color: '#000' }]}>
+                    Search Results for "{searchQuery}"
                   </ThemedText>
                 </View>
               }
@@ -966,17 +1057,10 @@ export default function HomeScreen() {
                 searchLoading ? (
                   <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color="#4a5568" />
-                    <ThemedText style={styles.loadingText}>
-                      Searching for products...
-                    </ThemedText>
                   </View>
                 ) : searchError ? (
                   <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle-outline" size={48} color="#ef4444" style={{ marginBottom: 12 }} />
                     <ThemedText style={styles.errorText}>{searchError}</ThemedText>
-                    <ThemedText style={styles.errorSubtext}>
-                      Please try again or check your connection
-                    </ThemedText>
                   </View>
                 ) : null
               }
@@ -996,15 +1080,8 @@ export default function HomeScreen() {
               {/* Show "no results" only when search was submitted (not focused) */}
               {!isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && (
                 <View style={styles.emptyState}>
-                  <Ionicons name="search-outline" size={64} color="#d1d5db" style={{ marginBottom: 16 }} />
-                  <ThemedText style={styles.emptyStateTitle}>
-                    No results found
-                  </ThemedText>
                   <ThemedText style={styles.emptyStateText}>
-                    We couldn't find any products matching "{searchQuery}"
-                  </ThemedText>
-                  <ThemedText style={styles.emptyStateSubtext}>
-                    Try different keywords or browse categories
+                    No products found for "{searchQuery}"
                   </ThemedText>
                 </View>
               )}
@@ -1012,12 +1089,8 @@ export default function HomeScreen() {
               {/* Show placeholder when search is focused but no query yet */}
               {isSearchFocused && searchQuery.trim().length === 0 && (
                 <View style={styles.emptyState}>
-                  <Ionicons name="search-outline" size={64} color="#d1d5db" style={{ marginBottom: 16 }} />
-                  <ThemedText style={styles.emptyStateTitle}>
-                    Start searching
-                  </ThemedText>
                   <ThemedText style={styles.emptyStateText}>
-                    Type to find products, brands, or categories
+                    Start typing to search products...
                   </ThemedText>
                 </View>
               )}
@@ -1025,9 +1098,8 @@ export default function HomeScreen() {
               {/* Show placeholder when search is focused with query but no results yet */}
               {isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && (
                 <View style={styles.emptyState}>
-                  <Ionicons name="arrow-down-outline" size={48} color="#9ca3af" style={{ marginBottom: 16 }} />
                   <ThemedText style={styles.emptyStateText}>
-                    Press Enter or tap search to find "{searchQuery}"
+                    Press Enter to search for "{searchQuery}"
                   </ThemedText>
                 </View>
               )}
@@ -1056,7 +1128,8 @@ export default function HomeScreen() {
             filteredProducts.length > 0 ? (
               <ProductSection 
                 title={`${selectedCategory?.displayName || 'Category'} Products`} 
-                products={filteredProducts} 
+                products={filteredProducts}
+                iconUri={selectedCategoryVisual?.iconUri}
               />
             ) : (
               <View style={styles.emptyState}>
@@ -1072,18 +1145,27 @@ export default function HomeScreen() {
               <View style={styles.bannerSection}>
                 <BannerCarousel />
               </View>
-              {Object.entries(productsByCategory).map(([categoryCode, categoryProducts]) => {
-                const category = categories.find(c => c.code === categoryCode);
-                const icon = category ? categoryIconMap[category.code] || '📦' : '📦';
-                if (!category || categoryProducts.length === 0) return null;
-                return (
-                  <ProductSection
-                    key={categoryCode}
-                    title={`${category.displayName} ${icon}`}
-                    products={categoryProducts}
-                  />
-                );
-              })}
+              {sortedCategoryEntries.length > 0 ? (
+                sortedCategoryEntries.map(({ category, categoryCode, categoryProducts }) => {
+                  if (!category) return null;
+                  // Show category section even if empty (for debugging - can filter later)
+                  const visual = getCategoryVisual(category);
+                  return (
+                    <ProductSection
+                      key={categoryCode}
+                      title={category.displayName}
+                      products={categoryProducts}
+                      iconUri={visual.iconUri}
+                    />
+                  );
+                })
+              ) : (
+                <View style={styles.emptyState}>
+                  <ThemedText style={styles.emptyStateText}>
+                    No categories found. Please check your API connection.
+                  </ThemedText>
+                </View>
+              )}
             </>
           )}
           <View style={{ height: insets.bottom + 20 }} />
@@ -1107,54 +1189,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingBottom: 12,
   },
-  searchModeHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    zIndex: 1000,
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  searchModeHeaderContent: {
-    paddingVertical: 8,
-  },
-  backButtonInSearch: {
-    marginRight: 4,
-  },
   categoryContainer: {
     padding: 12,
     paddingBottom: 12,
     borderRadius: 20,
     backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
-  },
-  categoryActionsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  categoryActionsLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1f2937',
   },
   expandToggleButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#111827',
+    position: 'absolute',
+    top: 21,
+    right: 22,
+    width: 34,
+    height: 34,
+    borderRadius: 16,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 10,
   },
   categoriesWrapper: {
     overflow: 'hidden',
@@ -1240,10 +1291,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   categoryIconContainer: {
-    marginBottom: 2,
+    marginBottom: 4,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  categoryIcon: {
-    fontSize: 20,
+  categoryIconImage: {
+    width: 24,
+    height: 24,
   },
   categoryName: {
     fontSize: 12,
@@ -1254,113 +1311,54 @@ const styles = StyleSheet.create({
     lineHeight: 14,
     color: '#000',
   },
-  searchFieldWrapper: {
-    width: '100%',
-    marginBottom: 12,
-  },
-  searchFieldWrapperHero: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  searchFieldWrapperHeader: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 12,
+  searchPill: {
+    marginBottom: 8,
+    overflow: 'hidden',
   },
   searchPillContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 42,
-    paddingHorizontal: 14,
-    borderRadius: 21,
+    height: 52,
+    paddingHorizontal: 12,
+    borderRadius: 26,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     backgroundColor: '#f8f8f8',
     overflow: 'hidden',
   },
+  backButton: {
+    marginRight: -4,
+  },
+  clearButton: {
+    marginLeft: 4,
+  },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '400',
     color: '#333',
-    padding: 0,
+    paddingVertical: 14,
+    paddingHorizontal: 0,
     margin: 0,
-  },
-  searchHelperRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  searchHelperIcon: {
-    marginRight: 6,
-  },
-  searchHelperText: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  quickPickRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 12,
-  },
-  quickPickPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 18,
-    backgroundColor: '#eef2ff',
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  quickPickIcon: {
-    marginRight: 4,
-  },
-  quickPickText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#4b5563',
+    minHeight: 52,
   },
   categoryCardSelected: {
-    backgroundColor: '#e0e0e0',
+    transform: [{ translateY: -1 }],
   },
   categoryCardPressed: {
     opacity: 0.7,
   },
   emptyState: {
-    paddingVertical: 80,
-    paddingHorizontal: 32,
+    paddingVertical: 60,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 300,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#1f2937',
-    textAlign: 'center',
-    marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 16,
-    color: '#6b7280',
+    color: '#999',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 4,
-  },
-  emptyStateSubtext: {
-    fontSize: 14,
-    color: '#9ca3af',
-    textAlign: 'center',
-    marginTop: 8,
   },
   section: {
     marginBottom: 24,
@@ -1372,6 +1370,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     marginBottom: 12,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitleIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+  },
   seeAllText: {
     color: '#4a5568',
     fontSize: 14,
@@ -1380,6 +1388,9 @@ const styles = StyleSheet.create({
   productList: {
     paddingHorizontal: 8,
     gap: 12,
+  },
+  productCardWrapper: {
+    width: PRODUCT_CARD_WIDTH,
   },
   searchResultsGrid: {
     paddingHorizontal: 8,
@@ -1400,28 +1411,81 @@ const styles = StyleSheet.create({
     padding: 8,
     width: '100%',
     position: 'relative',
+    flex: 1,
   },
-  discountBadge: {
+  productContent: {
+    flex: 1,
+  },
+  addToCartIcon: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    zIndex: 1,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  discountText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
+  quantityCounter: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#007AFF',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    zIndex: 10,
+    shadowColor: '#007AFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    minHeight: 32,
+  },
+  quantityButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 4,
+  },
+  quantityButtonInner: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#f0f7ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityNumberContainer: {
+    minWidth: 28,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quantityText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#007AFF',
+    textAlign: 'center',
   },
   productImage: {
     width: '100%',
     height: 120,
     borderRadius: 8,
     marginBottom: 8,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#fff',
   },
   productImagePlaceholder: {
     justifyContent: 'center',
@@ -1430,39 +1494,17 @@ const styles = StyleSheet.create({
   productName: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 4,
-    minHeight: 36,
+    minHeight: 15,
+    color: '#000',
   },
-  productPriceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+  productWeightCalories: {
+    fontSize: 13,
+    color: '#666'
   },
   productPrice: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#4a5568',
-  },
-  originalPrice: {
-    fontSize: 12,
-    textDecorationLine: 'line-through',
-    color: '#999',
-  },
-  addToCartButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4a5568',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 4,
-  },
-  addToCartText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
   },
   autocompleteContainer: {
     marginTop: 8,
@@ -1470,66 +1512,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    maxHeight: 250,
+    maxHeight: 200,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  autocompleteHeader: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  autocompleteHeaderText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6b7280',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   autocompleteItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
-    gap: 12,
-  },
-  autocompleteItemLast: {
-    borderBottomWidth: 0,
-  },
-  autocompleteIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   autocompleteText: {
     flex: 1,
-    fontSize: 15,
-    color: '#1f2937',
-    fontWeight: '500',
-  },
-  autocompleteLoadingContainer: {
-    marginTop: 8,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-  },
-  autocompleteLoadingText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: '#333',
   },
   loadingContainer: {
     paddingVertical: 40,
@@ -1542,21 +1538,14 @@ const styles = StyleSheet.create({
     color: '#999',
   },
   errorContainer: {
-    paddingVertical: 60,
-    paddingHorizontal: 32,
+    paddingVertical: 40,
+    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   errorText: {
-    fontSize: 16,
-    color: '#ef4444',
-    textAlign: 'center',
-    fontWeight: '500',
-    marginBottom: 8,
-  },
-  errorSubtext: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: '#ef4444',
     textAlign: 'center',
   },
 });

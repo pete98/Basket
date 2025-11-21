@@ -1,19 +1,162 @@
-import React from 'react';
-import { Image, ScrollView, StyleSheet, Text } from 'react-native';
+import React, { useState } from 'react';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+
+const accountActions = [
+  {
+    title: 'Payment Methods',
+    description: 'Visa •••• 3941',
+    icon: 'card-outline',
+    tint: '#EDF6FF',
+  },
+  {
+    title: 'Saved Addresses',
+    description: '2 delivery locations',
+    icon: 'home-outline',
+    tint: '#F5F0FF',
+  },
+  {
+    title: 'Security',
+    description: 'Password & sign-in options',
+    icon: 'shield-checkmark-outline',
+    tint: '#FFF6ED',
+  },
+];
+
+const supportOptions = [
+  {
+    title: 'Help Center',
+    description: 'FAQs and live chat',
+    icon: 'chatbubbles-outline',
+    tint: '#E8FBF1',
+  },
+  {
+    title: 'Order History',
+    description: 'Track or reorder past items',
+    icon: 'time-outline',
+    tint: '#E9F2FF',
+  },
+];
 
 export default function UserProfile() {
+  const [pushEnabled, setPushEnabled] = useState(true);
+  const [promoEnabled, setPromoEnabled] = useState(false);
+
   return (
-    <ScrollView 
+    <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.contentContainer}>
-      <Image
-        source={{
-          uri: 'https://randomuser.me/api/portraits/men/41.jpg',
-        }}
-        style={styles.avatar}
-      />
-      <Text style={styles.name}>John Doe</Text>
-      <Text style={styles.email}>john.doe@example.com</Text>
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}>
+      <View style={styles.profileCard}>
+        <View style={styles.avatarWrapper}>
+          <Image
+            source={{ uri: 'https://randomuser.me/api/portraits/men/41.jpg' }}
+            style={styles.avatar}
+          />
+        </View>
+        <View style={styles.profileMeta}>
+          <Text style={styles.name}>John Doe</Text>
+          <Text style={styles.email}>john.doe@example.com</Text>
+          <View style={styles.badge}>
+            <Ionicons
+              name="star"
+              size={14}
+              color="#FFB100"
+              style={styles.badgeIcon}
+            />
+            <Text style={styles.badgeText}>Premium member</Text>
+          </View>
+        </View>
+        <Pressable style={styles.editButton}>
+          <Ionicons
+            name="create-outline"
+            size={16}
+            color="#1C1C1E"
+            style={styles.editIcon}
+          />
+          <Text style={styles.editButtonText}>Edit</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Account</Text>
+        {accountActions.map((item, index) => (
+          <Pressable
+            key={item.title}
+            style={({ pressed }) => [
+              styles.rowCard,
+              index > 0 && styles.rowSpacing,
+              pressed && styles.rowPressed,
+            ]}>
+            <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
+              <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
+            </View>
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>{item.title}</Text>
+              <Text style={styles.rowSubtitle}>{item.description}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+          </Pressable>
+        ))}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Preferences</Text>
+        <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
+          <View>
+            <Text style={styles.rowTitle}>Push Notifications</Text>
+            <Text style={styles.rowSubtitle}>Updates for deliveries</Text>
+          </View>
+          <Switch
+            value={pushEnabled}
+            onValueChange={setPushEnabled}
+            thumbColor={pushEnabled ? '#fff' : '#f4f4f5'}
+            trackColor={{ false: '#d4d7e1', true: '#4CAF50' }}
+          />
+        </View>
+        <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
+          <View>
+            <Text style={styles.rowTitle}>Promotions</Text>
+            <Text style={styles.rowSubtitle}>Personalized deals & tips</Text>
+          </View>
+          <Switch
+            value={promoEnabled}
+            onValueChange={setPromoEnabled}
+            thumbColor={promoEnabled ? '#fff' : '#f4f4f5'}
+            trackColor={{ false: '#d4d7e1', true: '#FF7849' }}
+          />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Support</Text>
+        {supportOptions.map((item, index) => (
+          <Pressable
+            key={item.title}
+            style={({ pressed }) => [
+              styles.rowCard,
+              index > 0 && styles.rowSpacing,
+              pressed && styles.rowPressed,
+            ]}>
+            <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
+              <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
+            </View>
+            <View style={styles.rowContent}>
+              <Text style={styles.rowTitle}>{item.title}</Text>
+              <Text style={styles.rowSubtitle}>{item.description}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+          </Pressable>
+        ))}
+      </View>
     </ScrollView>
   );
 }
@@ -21,27 +164,135 @@ export default function UserProfile() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F2F4F7',
   },
   contentContainer: {
-    flex: 1,
+    padding: 16,
+    paddingBottom: 32,
+  },
+  profileCard: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 20,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: '100%',
+    marginBottom: 24,
+    shadowColor: '#101828',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  avatarWrapper: {
+    borderRadius: 36,
+    overflow: 'hidden',
+    marginRight: 16,
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    marginBottom: 20,
+    width: 72,
+    height: 72,
+  },
+  profileMeta: {
+    flex: 1,
   },
   name: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    marginBottom: 6,
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1C1C1E',
   },
   email: {
-    fontSize: 16,
-    color: '#888',
+    fontSize: 14,
+    color: '#6E7191',
+    marginTop: 4,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
+    backgroundColor: '#FFF6E4',
+    alignSelf: 'flex-start',
+  },
+  badgeIcon: {
+    marginRight: 4,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#A05800',
+  },
+  editButton: {
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editIcon: {
+    marginRight: 6,
+  },
+  editButtonText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#1C1C1E',
+  },
+  section: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 24,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1.1,
+    color: '#667085',
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  rowCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  rowSpacing: {
+    marginTop: 12,
+  },
+  rowPressed: {
+    opacity: 0.6,
+  },
+  iconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  rowContent: {
+    flex: 1,
+  },
+  rowTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F1F24',
+  },
+  rowSubtitle: {
+    fontSize: 13,
+    color: '#8E90A6',
+    marginTop: 2,
+  },
+  preferenceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+  },
+  preferenceSpacing: {
+    marginTop: 12,
   },
 });

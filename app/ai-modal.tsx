@@ -107,8 +107,12 @@ export default function AIModalScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  const anchorLeft = Number(params.left ?? 0);
-  const anchorTop = Number(params.top ?? 0);
+  const parsedLeft = params.left !== undefined ? Number(params.left) : NaN;
+  const parsedTop = params.top !== undefined ? Number(params.top) : NaN;
+  const defaultLeft = (screenWidth - FAB_SIZE) / 2;
+  const defaultTop = (screenHeight - FAB_SIZE) / 2;
+  const anchorLeft = Number.isFinite(parsedLeft) ? parsedLeft : defaultLeft;
+  const anchorTop = Number.isFinite(parsedTop) ? parsedTop : defaultTop;
   const anchorX = anchorLeft + FAB_SIZE / 2;
   const anchorY = anchorTop + FAB_SIZE / 2;
 
