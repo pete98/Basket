@@ -883,13 +883,13 @@ export default function HomeScreen() {
     }
   };
 
-  const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 80;
+  const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 60;
 
   return (
     <View style={styles.container}>
       {/* Fixed Category Container at Top */}
       <View 
-        style={[styles.categorySection, { paddingTop: insets.top + 8 }]}
+        style={[styles.categorySection, { paddingTop: insets.top + 2 }]}
         onLayout={handleCategorySectionLayout}
       >
         <View style={styles.categoryContainer}>
@@ -1187,17 +1187,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     zIndex: 1000,
     paddingHorizontal: 8,
-    paddingBottom: 12,
+    paddingBottom: 4,
   },
   categoryContainer: {
-    padding: 12,
-    paddingBottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#fff',
   },
   expandToggleButton: {
     position: 'absolute',
-    top: 21,
+    top: 16,
     right: 22,
     width: 34,
     height: 34,
@@ -1217,7 +1217,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 4,
+    marginTop: 2,
     marginLeft: 5,
   },
   scrollView: {
@@ -1312,16 +1312,16 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   searchPill: {
-    marginBottom: 8,
+    marginBottom: 4,
     overflow: 'hidden',
   },
   searchPillContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 52,
-    paddingHorizontal: 12,
-    borderRadius: 26,
+    height: 46,
+    paddingHorizontal: 10,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     backgroundColor: '#f8f8f8',
@@ -1338,10 +1338,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
     color: '#333',
-    paddingVertical: 14,
+    paddingVertical: 10,
     paddingHorizontal: 0,
     margin: 0,
-    minHeight: 52,
+    minHeight: 46,
   },
   categoryCardSelected: {
     transform: [{ translateY: -1 }],
@@ -1507,7 +1507,7 @@ const styles = StyleSheet.create({
     color: '#4a5568',
   },
   autocompleteContainer: {
-    marginTop: 8,
+    marginTop: 4,
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
