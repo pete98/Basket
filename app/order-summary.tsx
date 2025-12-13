@@ -33,8 +33,6 @@ export default function OrderSummaryScreen() {
   const { state } = useCart();
   const { items, total } = state;
 
-  const [textMessageUpdates, setTextMessageUpdates] = useState(false);
-  const [promoCodesExpanded, setPromoCodesExpanded] = useState(false);
 
   // Get delivery details from params or use defaults
   const fulfillmentTypeParam = params.fulfillmentType as string;
@@ -103,17 +101,24 @@ export default function OrderSummaryScreen() {
 
   return (
     <SafeAreaView style={[styles.container]}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="arrow-back" size={24} color="#000" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Order Summary</Text>
-        <View style={styles.headerSpacer} />
+      <View
+        style={[
+          styles.pageHeaderBackground,
+          { paddingTop: insets.top + 8, marginTop: -insets.top },
+        ]}
+      >
+        <View style={styles.pageHeaderContent}>
+          <View style={styles.pageHeaderLeading}>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => router.back()}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.pageHeaderTitle}>Order Summary</Text>
+          </View>
+        </View>
       </View>
 
       <ScrollView 
@@ -202,26 +207,6 @@ export default function OrderSummaryScreen() {
           </View>
         </View>
 
-        {/* Text Message Updates */}
-        <View style={styles.card}>
-          <TouchableOpacity
-            style={styles.checkboxRow}
-            onPress={() => setTextMessageUpdates(!textMessageUpdates)}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.checkbox, textMessageUpdates && styles.checkboxChecked]}>
-              {textMessageUpdates && (
-                <Ionicons name="checkmark" size={14} color="#fff" />
-              )}
-            </View>
-            <View style={styles.checkboxLabelContainer}>
-              <Text style={styles.checkboxLabel}>
-                Receive text message updates
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
         {/* Fulfillment Instructions */}
         {!isPickup ? (
           <View style={styles.card}>
@@ -255,20 +240,6 @@ export default function OrderSummaryScreen() {
             </Text>
           </View>
         )}
-
-        {/* Promo Codes Section */}
-        <TouchableOpacity
-          style={styles.card}
-          onPress={() => setPromoCodesExpanded(!promoCodesExpanded)}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.promoCodesTitle}>Promo Codes</Text>
-          <Ionicons 
-            name={promoCodesExpanded ? "chevron-up" : "chevron-down"} 
-            size={20} 
-            color="#667085" 
-          />
-        </TouchableOpacity>
 
         {/* Payment Summary Section */}
         <View style={styles.card}>
@@ -327,12 +298,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F7FB',
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
   backButton: {
     width: 36,
     height: 36,
@@ -341,15 +306,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerTitle: {
-    flex: 1,
+  pageHeaderBackground: {
+    backgroundColor: '#f97316',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ea580c',
+    marginBottom: 16,
+    marginTop: 0,
+  },
+  pageHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  pageHeaderLeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pageHeaderTitle: {
+    color: '#fff',
     fontSize: 20,
     fontWeight: '700',
-    textAlign: 'center',
-    color: '#111322',
-  },
-  headerSpacer: {
-    width: 36,
   },
   scrollView: {
     flex: 1,
@@ -370,20 +350,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111322',
     marginBottom: 16,
-  },
-  promoCodesSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-  },
-  promoCodesTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#111322',
   },
   iconContainer: {
     width: 36,
@@ -430,32 +396,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#667085',
     marginTop: 2,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#D0D5DD',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: '#1F7AE0',
-    borderColor: '#1F7AE0',
-  },
-  checkboxLabelContainer: {
-    flex: 1,
-  },
-  checkboxLabel: {
-    fontSize: 15,
-    color: '#111322',
-    fontWeight: '500',
   },
   instructionItem: {
     flexDirection: 'row',

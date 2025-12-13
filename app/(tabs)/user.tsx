@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const accountActions = [
   {
@@ -47,14 +48,24 @@ const supportOptions = [
 ];
 
 export default function UserProfile() {
+  const insets = useSafeAreaInsets();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [promoEnabled, setPromoEnabled] = useState(false);
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
+      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 10 }]}>
+        <View style={styles.pageHeaderContent}>
+          <View>
+            <Text style={styles.pageHeaderTitle}>Your Profile</Text>
+            <Text style={styles.pageHeaderSubtitle}>Manage account & preferences</Text>
+          </View>
+        </View>
+      </View>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}>
       <View style={styles.profileCard}>
         <View style={styles.avatarWrapper}>
           <Image
@@ -158,6 +169,7 @@ export default function UserProfile() {
         ))}
       </View>
     </ScrollView>
+    </View>
   );
 }
 
@@ -166,8 +178,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F4F7',
   },
+  scrollView: {
+    flex: 1,
+  },
   contentContainer: {
-    padding: 16,
+    paddingTop: 24,
+    paddingHorizontal: 16,
     paddingBottom: 32,
   },
   profileCard: {
@@ -294,5 +310,28 @@ const styles = StyleSheet.create({
   },
   preferenceSpacing: {
     marginTop: 12,
+  },
+  pageHeaderBackground: {
+    backgroundColor: '#f97316',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ea580c',
+  },
+  pageHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  pageHeaderTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  pageHeaderSubtitle: {
+    color: '#ffe8d2',
+    fontSize: 14,
+    marginTop: 4,
   },
 });

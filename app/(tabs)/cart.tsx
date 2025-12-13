@@ -27,10 +27,23 @@ export default function CartScreen() {
   const finalTotal = total + tax;
   const itemCountLabel = items.length === 1 ? '1 item' : `${items.length} items`;
 
+  const pickupEtaMessage =
+    'Ready within about 15 minutes once the store confirms your order.';
+  const pickupLocationAddress = '617 Alabama Ave SW Birmingham, AL 35211';
+  const pickupLocationLabel = 'Basket Market';
+
   const handleCheckout = () => {
-    if (items.length > 0) {
-      router.push('/schedule-order');
-    }
+    if (!items.length) return;
+    router.push({
+      pathname: '/order-summary',
+      params: {
+        fulfillmentType: 'pickup',
+        pickupEta: pickupEtaMessage,
+        pickupLocation: pickupLocationAddress,
+        pickupLocationName: pickupLocationLabel,
+        deliveryFee: '0',
+      },
+    });
   };
 
   const handleIncreaseQuantity = (id: string, currentQuantity: number) => {
@@ -103,10 +116,14 @@ export default function CartScreen() {
 
   if (items.length === 0) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <View style={styles.header}>
-          <Text style={styles.title}>My Cart</Text>
-          <Text style={styles.subtitle}>It feels lonely in here</Text>
+      <View style={styles.container}>
+        <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
+          <View style={styles.pageHeaderContent}>
+            <View>
+              <Text style={styles.pageHeaderTitle}>My Cart</Text>
+              <Text style={styles.pageHeaderSubtitle}>It feels lonely in here</Text>
+            </View>
+          </View>
         </View>
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIcon}>
@@ -127,17 +144,19 @@ export default function CartScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top + 8 }]}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>My Cart</Text>
-          <Text style={styles.subtitle}>
-            {itemCountLabel} · ${total.toFixed(2)} subtotal
-          </Text>
-        </View>
-        <View style={styles.deliveryTag}>
-        <Ionicons name="bicycle-outline" size={16} color={ACCENT_COLOR} />
-          <Text style={styles.deliveryTagText}>Free delivery over $35</Text>
+    <View style={styles.container}>
+      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.pageHeaderContent}>
+          <View>
+            <Text style={styles.pageHeaderTitle}>My Cart</Text>
+            <Text style={styles.pageHeaderSubtitle}>
+              {itemCountLabel} · ${total.toFixed(2)} subtotal
+            </Text>
+          </View>
+          <View style={styles.deliveryTag}>
+            <Ionicons name="bicycle-outline" size={16} color="#fff" />
+            <Text style={styles.deliveryTagText}>Free delivery over $35</Text>
+          </View>
         </View>
       </View>
 
@@ -206,26 +225,46 @@ const styles = StyleSheet.create({
     color: '#667085',
     marginTop: 4,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   deliveryTag: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: SOFT_NEUTRAL_BG,
+    backgroundColor: 'rgba(255,255,255,0.5)',
     borderRadius: 999,
     gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
   },
   deliveryTagText: {
     fontSize: 12,
-    color: ACCENT_COLOR,
+    color: '#fff',
     fontWeight: '600',
+  },
+  pageHeaderBackground: {
+    backgroundColor: '#f97316',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ea580c',
+    marginBottom: 16,
+  },
+  pageHeaderContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+    marginBottom: 8,
+  },
+  pageHeaderTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  pageHeaderSubtitle: {
+    color: '#ffe8d2',
+    fontSize: 14,
+    marginTop: 4,
   },
   emptyContainer: {
     flex: 1,

@@ -1,9 +1,8 @@
-import { DeliverySlot } from '@/lib/types/cart';
+// import { DeliverySlot } from '@/lib/types/cart'; // Delivery feature temporarily disabled
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+// import { useState } from 'react'; // Delivery feature temporarily disabled
 import {
-  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,20 +10,21 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ScheduleOrderScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
+  /*
   const [selectedDate, setSelectedDate] = useState<string>('today');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<DeliverySlot | null>(null);
   const [fulfillmentType, setFulfillmentType] = useState<'delivery' | 'pickup'>('delivery');
-
   const isDelivery = fulfillmentType === 'delivery';
+  */
   const pickupEtaMessage = 'Ready within about 15 minutes once the store confirms your order.';
   const pickupLocationLabel = 'Basket Market - Birmingham';
   const pickupLocationAddress = '617 Alabama Ave SW Birmingham, AL 35211';
 
+  /*
   const getDates = () => {
     const dates = [];
     const today = new Date();
@@ -65,26 +65,9 @@ export default function ScheduleOrderScreen() {
   ];
 
   const isContinueDisabled = isDelivery && !selectedTimeSlot;
+  */
 
   const handleContinue = () => {
-    if (isDelivery) {
-      if (!selectedTimeSlot) return;
-
-      router.replace({
-        pathname: '/order-summary',
-        params: {
-          fulfillmentType: 'delivery',
-          date: selectedDate,
-          timeSlotId: selectedTimeSlot.id,
-          timeSlotStart: selectedTimeSlot.startTime,
-          timeSlotEnd: selectedTimeSlot.endTime,
-          timeSlotTz: selectedTimeSlot.timeZone,
-          deliveryFee: selectedTimeSlot.deliveryFee.toString(),
-        },
-      });
-      return;
-    }
-
     router.replace({
       pathname: '/order-summary',
       params: {
@@ -97,6 +80,7 @@ export default function ScheduleOrderScreen() {
     });
   };
 
+  /*
   const renderSlot = ({ item }: { item: DeliverySlot }) => (
     <TouchableOpacity
       style={[
@@ -165,16 +149,6 @@ export default function ScheduleOrderScreen() {
         </ScrollView>
       </View>
 
-      {/* <View style={styles.boostSection}>
-        <View style={styles.boostContent}>
-          <Text style={styles.boostLogo}>basket+</Text>
-          <Text style={styles.boostText}>Sign up and enjoy free* same day delivery.</Text>
-        </View>
-        <TouchableOpacity>
-          <Text style={styles.boostLink}>Start Free Trial</Text>
-        </TouchableOpacity>
-      </View> */}
-
       <Text style={styles.slotHeader}>Available slots</Text>
     </View>
   );
@@ -184,6 +158,7 @@ export default function ScheduleOrderScreen() {
       *$20 order minimum. Restrictions apply. Subject to availability. Delivery time not guaranteed.
     </Text>
   );
+  */
 
   return (
     <View style={styles.modalOverlay}>
@@ -209,6 +184,8 @@ export default function ScheduleOrderScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* Delivery toggle temporarily disabled */}
+        {/*
         <View style={styles.fulfillmentToggle}>
           <TouchableOpacity
             style={[
@@ -255,9 +232,36 @@ export default function ScheduleOrderScreen() {
             </Text>
           </TouchableOpacity>
         </View>
-
-
+        */}
         <View style={styles.sheetBody}>
+          {/* Delivery list temporarily removed; only pickup available */}
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.pickupScroll}
+            contentContainerStyle={styles.pickupContent}
+          >
+            <View style={styles.addressSection}>
+              <Text style={styles.addressLabel}>Pickup from</Text>
+              <Text style={styles.addressText}>{pickupLocationLabel}</Text>
+              <Text style={styles.pickupAddress}>{pickupLocationAddress}</Text>
+            </View>
+
+            <View style={styles.pickupEtaCard}>
+              <Ionicons name="time-outline" size={20} color="#111322" />
+              <View style={styles.pickupEtaCopy}>
+                <Text style={styles.pickupEtaTitle}>Ready shortly</Text>
+                <Text style={styles.pickupEtaText}>{pickupEtaMessage}</Text>
+              </View>
+            </View>
+
+            <View style={styles.pickupInfoCard}>
+              <Ionicons name="notifications-outline" size={18} color="#5D6B82" />
+              <Text style={styles.pickupInfoText}>
+                We'll notify you when the store confirms your order. Bring your ID and confirmation email when you arrive.
+              </Text>
+            </View>
+          </ScrollView>
+          {/*
           {isDelivery ? (
             <FlatList
               data={timeSlots}
@@ -297,14 +301,13 @@ export default function ScheduleOrderScreen() {
               </View>
             </ScrollView>
           )}
+          */}
           <View style={styles.footer}>
             <TouchableOpacity
               style={[
                 styles.continueButton,
-                isContinueDisabled && styles.continueButtonDisabled,
               ]}
               onPress={handleContinue}
-              disabled={isContinueDisabled}
               activeOpacity={0.85}
             >
               <Text style={styles.continueButtonText}>Review order</Text>

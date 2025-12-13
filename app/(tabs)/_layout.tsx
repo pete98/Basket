@@ -1,4 +1,3 @@
-import { AIFab } from '@/components/ai/fab';
 import { useCart } from '@/contexts/cart-context';
 import { Icon, Label, NativeTabs } from 'expo-router/unstable-native-tabs';
 import React from 'react';
@@ -37,9 +36,9 @@ export default function TabLayout() {
       <Icon sf={"person.fill"} drawable='person' />
     </NativeTabs.Trigger>
 
-    <NativeTabs.Trigger name="pantry">
-      <Label>Pantry</Label>
-      <Icon sf={"cabinet.fill"} drawable='kitchen' />
+    <NativeTabs.Trigger name="orders">
+      <Label>Orders</Label>
+      <Icon sf={"bag.fill"} drawable='bag' />
     </NativeTabs.Trigger>
 
       </NativeTabs>
@@ -52,7 +51,6 @@ export default function TabLayout() {
           </View>
         </View>
       )}
-      <AIFab />
     </View>
   );
 }

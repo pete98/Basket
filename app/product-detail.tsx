@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Helper function to format weight with unit
 function formatWeight(weight?: number, weightUnit?: string): string {
@@ -31,6 +31,7 @@ export default function ProductDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { addItem, updateQuantity, state } = useCart();
+  const insets = useSafeAreaInsets();
 
   const [infoTab, setInfoTab] = useState<InfoTab>('details');
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -179,38 +180,44 @@ export default function ProductDetailScreen() {
       ].filter(isNonEmptyString);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea}>
       <StatusBar style="dark" backgroundColor="#fff" />
 
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => router.back()}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Ionicons name="close" size={22} color="#111322" />
-        </TouchableOpacity>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => setIsBookmarked(prev => !prev)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons 
-              name={isBookmarked ? 'bookmark' : 'bookmark-outline'} 
-              size={22} 
-              color="#111322" 
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerButton}
-            onPress={() => console.log('Share product', product.name)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          >
-            <Ionicons name="share-outline" size={22} color="#111322" />
-          </TouchableOpacity>
+      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.pageHeaderContent}>
+          <View style={styles.pageHeaderLeading}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => router.back()}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="close" size={22} color="#111322" />
+            </TouchableOpacity>
+            <View style={styles.pageHeaderTitleBlock}>
+              <Text style={styles.pageHeaderTitle}>{product.name || 'Product'}</Text>
+              <Text style={styles.pageHeaderSubtitle}>Fresh from the market</Text>
+            </View>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setIsBookmarked(prev => !prev)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons 
+                name={isBookmarked ? 'bookmark' : 'bookmark-outline'} 
+                size={22} 
+                color="#111322" 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => console.log('Share product', product.name)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Ionicons name="share-outline" size={22} color="#111322" />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -342,12 +349,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
-  header: {
+  pageHeaderBackground: {
+    backgroundColor: '#f97316',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ea580c',
+  },
+  pageHeaderContent: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingBottom: 8,
+  },
+  pageHeaderLeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pageHeaderTitleBlock: {
+    marginLeft: 8,
+  },
+  pageHeaderTitle: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  pageHeaderSubtitle: {
+    color: '#ffe8d2',
+    fontSize: 13,
+    marginTop: 2,
   },
   headerButton: {
     width: 40,
