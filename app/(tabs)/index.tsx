@@ -347,10 +347,12 @@ function ProductSection({
   title, 
   products,
   onProductPress,
+  onSeeAll,
 }: { 
   title: string; 
   products: UIProduct[];
   onProductPress: (product: UIProduct) => void;
+  onSeeAll: () => void;
  }) {
   // Show section even if empty (for debugging - helps see which categories are loaded)
   const hasProducts = products && products.length > 0;
@@ -364,7 +366,7 @@ function ProductSection({
           </ThemedText>
         </View>
         {hasProducts && (
-        <TouchableOpacity onPress={() => undefined}>
+        <TouchableOpacity onPress={onSeeAll} accessibilityRole="button">
             <ThemedText style={styles.seeAllText}>See All</ThemedText>
           </TouchableOpacity>
         )}
@@ -1045,6 +1047,8 @@ export default function HomeScreen() {
   };
 
   const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 60;
+  const contentTopInset = 8;
+  const contentBottomInset = insets.bottom + 24;
   const formattedWeight = selectedProduct ? formatWeight(selectedProduct.weight, selectedProduct.weightUnit) : '';
   const weightCaloriesText =
     formattedWeight && selectedProduct?.calories
@@ -1265,12 +1269,12 @@ export default function HomeScreen() {
           {/* Search Results - Only show when not focused (after search is submitted) */}
           {!isSearchFocused && searchQuery.trim().length > 0 && searchResults.length > 0 ? (
           <FlatList
-            style={[styles.scrollView, { marginTop: topOffset }]}
+            style={[styles.scrollView, { marginTop: topOffset + contentTopInset }]}
             data={searchResults}
             numColumns={2}
             showsVerticalScrollIndicator={false}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={[styles.searchResultsGrid, { paddingTop: 16 }]}
+            contentContainerStyle={[styles.searchResultsGrid, { paddingTop: 8 }]}
             columnWrapperStyle={styles.searchResultsRow}
             onScroll={handleContentScroll}
             scrollEventThrottle={16}
@@ -1292,7 +1296,7 @@ export default function HomeScreen() {
                   </View>
                 ) : null
               }
-              ListFooterComponent={<View style={{ height: insets.bottom + 20 }} />}
+              ListFooterComponent={<View style={{ height: contentBottomInset }} />}
               renderItem={({ item }) => (
                 <View style={styles.searchResultCardWrapper}>
                   <ProductCard product={item} onPress={openProductModal} />
@@ -1303,7 +1307,10 @@ export default function HomeScreen() {
             <ScrollView 
               style={[styles.scrollView, { marginTop: topOffset }]} 
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.scrollContent}
+              contentContainerStyle={[
+                styles.scrollContent,
+                { paddingTop: contentTopInset, paddingBottom: contentBottomInset },
+              ]}
               onScroll={handleContentScroll}
               scrollEventThrottle={16}
             >
@@ -1340,7 +1347,6 @@ export default function HomeScreen() {
                   </ThemedText>
                 </View>
               )}
-              <View style={{ height: insets.bottom + 20 }} />
             </ScrollView>
           )}
         </>
@@ -1349,7 +1355,10 @@ export default function HomeScreen() {
         <ScrollView 
           style={[styles.scrollView, { marginTop: topOffset }]} 
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: contentTopInset, paddingBottom: contentBottomInset },
+          ]}
           onScroll={handleContentScroll}
           scrollEventThrottle={16}
         >
@@ -1382,6 +1391,7 @@ export default function HomeScreen() {
                       title={sectionTitle}
                       products={productsForCategory}
                       onProductPress={openProductModal}
+                      onSeeAll={() => openCategoryProducts(category)}
                     />
                   );
                 })
@@ -1398,7 +1408,6 @@ export default function HomeScreen() {
               )}
             </>
           )}
-          <View style={{ height: insets.bottom + 20 }} />
         </ScrollView>
       )}
 
@@ -1758,8 +1767,8 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     position: 'relative',
-    marginTop: 12,
-    marginBottom: 24,
+    marginTop: 0,
+    marginBottom: 0,
     paddingHorizontal: 16,
   },
   heroBackdrop: {
@@ -1793,8 +1802,8 @@ const styles = StyleSheet.create({
   },
   heroCardsRow: {
     gap: 14,
-    paddingTop: 16,
-    paddingBottom: 4,
+    paddingTop: 10,
+    paddingBottom: 0,
     paddingHorizontal: 4,
   },
   heroCard: {

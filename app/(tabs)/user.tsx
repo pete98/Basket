@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -15,6 +15,9 @@ import { useRouter } from 'expo-router';
 import { useAuth0 } from 'react-native-auth0';
 import { isAuth0Configured } from '@/lib/config/auth0';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
+import { getStoreById } from '@/lib/api/stores';
+import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
+import * as SecureStore from 'expo-secure-store';
 
 const accountActions = [
   {
@@ -22,13 +25,6 @@ const accountActions = [
     description: 'Visa •••• 3941',
     icon: 'card-outline',
     tint: '#EDF6FF',
-  },
-  {
-    title: 'Saved Store',
-    description: '2 delivery locations',
-    icon: 'home-outline',
-    tint: '#F5F0FF',
-    route: '/find-store',
   },
   {
     title: 'Security',
@@ -58,10 +54,101 @@ export default function UserProfile() {
   const insets = useSafeAreaInsets();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [promoEnabled, setPromoEnabled] = useState(false);
-  const { clearSession, user, isLoading } = useAuth0();
+  const { clearSession, user, isLoading, getCredentials } = useAuth0();
   const { isLoggedIn, openLogin } = useAuthGuard();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [savedStoreTitle, setSavedStoreTitle] = useState('No store selected');
+  const [savedStoreSubtitle, setSavedStoreSubtitle] = useState(
+    'Select a store to enable store-specific inventory and search.'
+  );
+  const [isStoreLoading, setIsStoreLoading] = useState(false);
   const configReady = isAuth0Configured;
+  const ACCESS_TOKEN_KEY = 'auth0_access_token';
+
+  function getActiveStoreId(activeStore: unknown): number | null {
+    if (!activeStore || typeof activeStore !== 'object') return null;
+    const store = activeStore as { storeId?: number | string; id?: number | string };
+    if (typeof store.storeId === 'number') return store.storeId;
+    if (typeof store.storeId === 'string') {
+      const parsedStoreId = Number.parseInt(store.storeId, 10);
+      if (!Number.isNaN(parsedStoreId)) return parsedStoreId;
+    }
+    if (typeof store.id === 'number') return store.id;
+    if (typeof store.id === 'string') {
+      const parsedId = Number.parseInt(store.id, 10);
+      if (!Number.isNaN(parsedId)) return parsedId;
+    }
+    return null;
+  }
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setSavedStoreTitle('No store selected');
+      setSavedStoreSubtitle('Select a store to enable store-specific inventory and search.');
+      setIsStoreLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsStoreLoading(true);
+
+    async function loadSavedStore() {
+      try {
+        let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+        if (!accessToken) {
+          const credentials = await getCredentials();
+          accessToken = credentials?.accessToken ?? null;
+          if (accessToken) {
+            await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
+          }
+        }
+
+        if (!accessToken) {
+          if (!isActive) return;
+          setSavedStoreTitle('No store selected');
+          setSavedStoreSubtitle('Log in again to load your active store.');
+          return;
+        }
+
+        const profile = await getUserByAuth0(accessToken);
+        const userId = (profile as { id?: number | string }).id;
+        if (!userId) {
+          if (!isActive) return;
+          setSavedStoreTitle('No store selected');
+          setSavedStoreSubtitle('Unable to resolve your user profile.');
+          return;
+        }
+
+        const activeStore = await getActiveStore(userId, accessToken);
+        const activeStoreId = getActiveStoreId(activeStore);
+        if (!activeStoreId) {
+          if (!isActive) return;
+          setSavedStoreTitle('No store selected');
+          setSavedStoreSubtitle('Choose a store to personalize Home and Search.');
+          return;
+        }
+
+        const store = await getStoreById({ storeId: activeStoreId });
+        if (!isActive) return;
+        const streetLine = store.street2 ? `${store.street}, ${store.street2}` : store.street;
+        setSavedStoreTitle(store.displayName || `Store #${activeStoreId}`);
+        setSavedStoreSubtitle(`${streetLine}, ${store.city}, ${store.state} ${store.zip}`);
+      } catch (error) {
+        if (!isActive) return;
+        setSavedStoreTitle('No store selected');
+        setSavedStoreSubtitle(error instanceof Error ? error.message : 'Unable to load active store.');
+      } finally {
+        if (!isActive) return;
+        setIsStoreLoading(false);
+      }
+    }
+
+    void loadSavedStore();
+
+    return () => {
+      isActive = false;
+    };
+  }, [getCredentials, isLoggedIn]);
 
   const handleLogin = useCallback(() => {
     openLogin({ pathname: '/user' });
@@ -90,7 +177,13 @@ export default function UserProfile() {
       </View>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
+        contentContainerStyle={[
+          styles.contentContainer,
+          {
+            paddingTop: 16,
+            paddingBottom: insets.bottom + 44,
+          },
+        ]}
         showsVerticalScrollIndicator={false}>
         <View style={styles.profileCard}>
           <View style={styles.avatarWrapper}>
@@ -167,6 +260,31 @@ export default function UserProfile() {
             )}
           </Pressable>
         </View>
+
+        {isLoggedIn && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Saved Store</Text>
+            <View style={styles.storeCard}>
+              <View style={styles.storeInfo}>
+                <Text style={styles.storeName}>{savedStoreTitle}</Text>
+                {isStoreLoading ? (
+                  <ActivityIndicator size="small" color="#4a5568" />
+                ) : (
+                  <Text style={styles.storeAddress}>{savedStoreSubtitle}</Text>
+                )}
+              </View>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.changeStoreButton,
+                  pressed && styles.rowPressed,
+                ]}
+                onPress={() => router.push('/find-store')}
+              >
+                <Text style={styles.changeStoreButtonText}>Change Store</Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
 
         {isLoggedIn && (
           <View style={styles.section}>
@@ -263,9 +381,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentContainer: {
-    paddingTop: 24,
     paddingHorizontal: 16,
-    paddingBottom: 32,
   },
   profileCard: {
     backgroundColor: '#fff',
@@ -408,6 +524,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#8E90A6',
     marginTop: 2,
+  },
+  storeCard: {
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
+  storeInfo: {
+    gap: 4,
+  },
+  storeName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F1F24',
+  },
+  storeAddress: {
+    fontSize: 13,
+    color: '#667085',
+    lineHeight: 18,
+  },
+  changeStoreButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#1C1C1E',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  changeStoreButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
   },
   preferenceRow: {
     flexDirection: 'row',

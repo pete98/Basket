@@ -18,17 +18,25 @@ export function formatWeight(weight?: number, weightUnit?: string): string {
 }
 
 export function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {
+  const category =
+    apiProduct.categoryDisplayName ||
+    apiProduct.subCategoryDisplayName ||
+    apiProduct.categories ||
+    apiProduct.subCategory ||
+    '';
+  const productName = apiProduct.itemName || apiProduct.productName || '';
+
   return {
     id: apiProduct.id.toString(),
-    name: apiProduct.itemName,
+    name: productName,
     price: apiProduct.price,
-    image: apiProduct.imageUrl,
-    category: apiProduct.categories || apiProduct.subCategory || '',
+    image: apiProduct.imageUrl || '',
+    category,
     inStock: apiProduct.stockQuantity > 0,
     weight: apiProduct.weight,
     weightUnit: apiProduct.weightUnit,
     calories: apiProduct.calories,
-    brand: apiProduct.brand,
+    brand: apiProduct.brand || apiProduct.brandName,
     description: apiProduct.description,
     stockQuantity: apiProduct.stockQuantity,
     popularityScore: apiProduct.popularityScore,
