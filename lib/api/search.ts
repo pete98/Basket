@@ -2,6 +2,7 @@ import { apiRequest } from './client';
 import { InventorySearchResponse, AutocompleteResponse } from '../types/api';
 
 export interface SearchProductsParams {
+  storeId: number;
   query?: string;
   category?: string[];
   brand?: string[];
@@ -11,8 +12,9 @@ export interface SearchProductsParams {
   pageSize?: number;
 }
 
-export async function searchProducts(params: SearchProductsParams = {}): Promise<InventorySearchResponse> {
+export async function searchProducts(params: SearchProductsParams): Promise<InventorySearchResponse> {
   const {
+    storeId,
     query = "*",
     category = [],
     brand = [],
@@ -21,8 +23,11 @@ export async function searchProducts(params: SearchProductsParams = {}): Promise
     page = 1,
     pageSize = 24,
   } = params;
+  const normalizedPage = Math.max(page, 1);
+  const normalizedPageSize = Math.min(Math.max(pageSize, 1), 100);
 
   const queryParams = new URLSearchParams();
+  queryParams.append('storeId', storeId.toString());
   
   if (query) {
     queryParams.append('query', query);
@@ -46,8 +51,8 @@ export async function searchProducts(params: SearchProductsParams = {}): Promise
     queryParams.append('sortBy', sortBy);
   }
   
-  queryParams.append('page', page.toString());
-  queryParams.append('pageSize', pageSize.toString());
+  queryParams.append('page', normalizedPage.toString());
+  queryParams.append('pageSize', normalizedPageSize.toString());
   
   return apiRequest<InventorySearchResponse>(`/api/search/items?${queryParams.toString()}`);
 }
@@ -77,4 +82,3 @@ export async function getAutocompleteSuggestions(params: AutocompleteParams): Pr
     signal: params.signal,
   });
 }
-

@@ -41,7 +41,35 @@ export interface Product {
 export type ProductResponse = Product[];
 
 // Search types matching /api/search/items response (InventorySearchResponse)
-export interface InventorySearchHit extends Product {
+export interface InventorySearchHit {
+  id: number;
+  storeId: number;
+  inventoryItemId?: number;
+  itemName?: string;
+  productName?: string;
+  sku?: string;
+  categoryDisplayName?: string;
+  subCategoryDisplayName?: string;
+  brand?: string;
+  brandName?: string;
+  modifiers?: string;
+  labels?: string;
+  description?: string;
+  imageUrl?: string;
+  calories?: number;
+  weight?: number;
+  weightUnit?: string;
+  price: number;
+  stockQuantity: number;
+  taxRate?: number;
+  taxEnabled?: boolean;
+  active?: boolean;
+  seasonal?: boolean;
+  discontinued?: boolean;
+  outOfStockReason?: string | null;
+  popularityScore?: number;
+  categories?: string;
+  subCategory?: string;
   score: number;
 }
 

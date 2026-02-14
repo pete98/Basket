@@ -3,11 +3,12 @@ import { ThemedText } from '@/components/themed-text';
 import { getCategoryVisual } from '@/constants/category-visuals';
 import { useLocation } from '@/contexts/location-context';
 import { useCart } from '@/contexts/cart-context';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 import { fetchCategories } from '@/lib/api/categories';
-import { ApiClientError } from '@/lib/api/client';
 import { fetchProductsByCategoryName, fetchProductsBySubcategoryName } from '@/lib/api/products';
 import { getAutocompleteSuggestions, searchProducts } from '@/lib/api/search';
+import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
 import { Category } from '@/lib/types/api';
 import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
@@ -34,6 +35,8 @@ import {
   useWindowDimensions,
   View
 } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { useAuth0 } from 'react-native-auth0';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 
@@ -62,6 +65,8 @@ const DEFAULT_CATEGORY_NAMES = [
   'Snacks',
   'Energy',
 ];
+
+const ACCESS_TOKEN_KEY = 'auth0_access_token';
 
 function tintWithAlpha(hexColor: string, alpha: number, fallback: string) {
   if (!hexColor) return fallback;
@@ -150,8 +155,12 @@ function dedupeProductsById(items: UIProduct[]): UIProduct[] {
   });
 }
 
-function isApiClientError(error: unknown): error is ApiClientError {
-  return error instanceof ApiClientError;
+function getActiveStoreId(activeStore: unknown): number | null {
+  if (!activeStore || typeof activeStore !== 'object') return null;
+  const store = activeStore as { storeId?: number; id?: number };
+  if (typeof store.storeId === 'number') return store.storeId;
+  if (typeof store.id === 'number') return store.id;
+  return null;
 }
 
 async function fetchProductsForCategory(category: Category): Promise<UIProduct[]> {
@@ -317,6 +326,8 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { selectedLocation } = useLocation();
+  const { isLoggedIn, openLogin } = useAuthGuard();
+  const { getCredentials } = useAuth0();
   const { addItem, updateQuantity, state } = useCart();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
@@ -489,6 +500,9 @@ export default function HomeScreen() {
   const [productsLoading, setProductsLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
   const [autocompleteLoading, setAutocompleteLoading] = useState(false);
+  const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
+  const [isStoreContextLoading, setIsStoreContextLoading] = useState(false);
+  const [storeContextError, setStoreContextError] = useState<string | null>(null);
   
   // Error states
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
@@ -499,6 +513,73 @@ export default function HomeScreen() {
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autocompleteAbortControllerRef = useRef<AbortController | null>(null);
+  const canSearchByStore = isLoggedIn && activeStoreId !== null;
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setActiveStoreId(null);
+      setStoreContextError(null);
+      setIsStoreContextLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    setIsStoreContextLoading(true);
+    setStoreContextError(null);
+    setActiveStoreId(null);
+
+    async function loadActiveStore() {
+      try {
+        let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+        if (!accessToken) {
+          const credentials = await getCredentials();
+          accessToken = credentials?.accessToken ?? null;
+          if (accessToken) {
+            await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
+          }
+        }
+
+        if (!accessToken) {
+          if (!isActive) return;
+          setActiveStoreId(null);
+          setStoreContextError('Log in to search by store inventory.');
+          return;
+        }
+
+        const profile = await getUserByAuth0(accessToken);
+        const rawUserId = (profile as { id?: number | string }).id;
+        if (!rawUserId) {
+          if (!isActive) return;
+          setActiveStoreId(null);
+          setStoreContextError('Unable to resolve your active store.');
+          return;
+        }
+
+        const activeStore = await getActiveStore(rawUserId, accessToken);
+        const resolvedStoreId = getActiveStoreId(activeStore);
+
+        if (!isActive) return;
+
+        setActiveStoreId(resolvedStoreId);
+        if (resolvedStoreId === null) {
+          setStoreContextError('Select a store to search inventory.');
+        }
+      } catch (error) {
+        if (!isActive) return;
+        setActiveStoreId(null);
+        setStoreContextError(error instanceof Error ? error.message : 'Unable to load active store.');
+      } finally {
+        if (!isActive) return;
+        setIsStoreContextLoading(false);
+      }
+    }
+
+    void loadActiveStore();
+
+    return () => {
+      isActive = false;
+    };
+  }, [getCredentials, isLoggedIn, selectedLocation.id]);
   
   // Fetch categories on mount
   useEffect(() => {
@@ -583,6 +664,13 @@ export default function HomeScreen() {
   
   // Main search function - similar to Next.js performSearch
   const performSearch = useCallback(async (queryOverride?: string) => {
+    if (activeStoreId === null) {
+      setSearchResults([]);
+      setAutocompleteSuggestions([]);
+      setSearchError('Select a store to search products.');
+      return;
+    }
+
     try {
       setSearchLoading(true);
       setSearchError(null);
@@ -595,11 +683,12 @@ export default function HomeScreen() {
       if (selectedCategoryId !== null) {
         const selectedCategory = categories.find((cat) => cat.id === selectedCategoryId);
         if (selectedCategory) {
-          categoryArray.push(selectedCategory.code);
+          categoryArray.push(selectedCategory.displayName);
         }
       }
 
       const searchParams = {
+        storeId: activeStoreId,
         query: queryToUse || "*",
         category: categoryArray.length > 0 ? categoryArray : undefined,
         page: 1,
@@ -610,50 +699,29 @@ export default function HomeScreen() {
       const mappedResults = (searchResponse.hits || []).map(mapSearchHitToProduct);
       setSearchResults(mappedResults);
     } catch (error) {
-      if (isApiClientError(error) && (error.status === 404 || error.status === 403)) {
-        applyClientSideSearch(queryOverride);
-      } else if (error instanceof Error && error.message.includes('404')) {
-        applyClientSideSearch(queryOverride);
-      } else {
-        setSearchError(error instanceof Error ? error.message : 'Failed to search products');
-        console.error('Error searching products:', error);
-        setSearchResults([]);
-      }
+      setSearchError(error instanceof Error ? error.message : 'Failed to search products');
+      console.error('Error searching products:', error);
+      setSearchResults([]);
     } finally {
       setSearchLoading(false);
     }
-  }, [searchQuery, selectedCategoryId, categories, products, selectedLocation]);
-
-  function applyClientSideSearch(queryOverride?: string) {
-    let filtered = products;
-
-    if (selectedCategoryId !== null) {
-      const selectedCategory = categories.find((cat) => cat.id === selectedCategoryId);
-      if (selectedCategory) {
-        filtered = filtered.filter(p => 
-          p.category === selectedCategory.displayName || 
-          p.category === selectedCategory.code
-        );
-      }
-    }
-
-    const queryToUse = queryOverride !== undefined ? queryOverride : searchQuery.trim();
-    if (queryToUse) {
-      filtered = filtered.filter(p => 
-        p.name.toLowerCase().includes(queryToUse.toLowerCase()) ||
-        p.category.toLowerCase().includes(queryToUse.toLowerCase())
-      );
-    }
-
-    setSearchResults(filtered);
-    setSearchError(null);
-  }
+  }, [activeStoreId, searchQuery, selectedCategoryId, categories]);
 
   // Perform search when category filter changes (automatic trigger)
   useEffect(() => {
     // Clear any pending search timer
     if (searchTimerRef.current) {
       clearTimeout(searchTimerRef.current);
+    }
+
+    if (!canSearchByStore) {
+      setSearchResults([]);
+      if (searchQuery.trim().length > 0 || selectedCategoryId !== null) {
+        setSearchError('Select a store to search products.');
+      } else {
+        setSearchError(null);
+      }
+      return;
     }
     
     // Only perform search if there's a query or a category is selected
@@ -673,7 +741,7 @@ export default function HomeScreen() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCategoryId, selectedLocation]); // Only trigger on category/location change, not query change
+  }, [canSearchByStore, selectedCategoryId, selectedLocation]); // Only trigger on category/location change, not query change
 
   // Debounced autocomplete - triggers after 2+ characters (matching Next.js pattern)
   useEffect(() => {
@@ -684,6 +752,12 @@ export default function HomeScreen() {
     
     if (autocompleteTimerRef.current) {
       clearTimeout(autocompleteTimerRef.current);
+    }
+
+    if (!canSearchByStore) {
+      setAutocompleteSuggestions([]);
+      setAutocompleteLoading(false);
+      return;
     }
     
     if (searchQuery.trim().length >= 2) {
@@ -731,10 +805,11 @@ export default function HomeScreen() {
         autocompleteAbortControllerRef.current.abort();
       }
     };
-  }, [searchQuery]);
+  }, [canSearchByStore, searchQuery]);
 
   // Handle search submission (for manual search trigger - when user presses enter)
   const handleSearchSubmit = useCallback(() => {
+    if (!canSearchByStore) return;
     setIsSearchFocused(false);
     // Clear any pending debounced search
     if (searchTimerRef.current) {
@@ -742,10 +817,11 @@ export default function HomeScreen() {
     }
     // Trigger search immediately on submit
     performSearch();
-  }, [performSearch]);
+  }, [canSearchByStore, performSearch]);
   
   // Handle autocomplete suggestion selection
   const handleSuggestionSelect = useCallback((suggestion: string) => {
+    if (!canSearchByStore) return;
     setSearchQuery(suggestion);
     setAutocompleteSuggestions([]);
     setIsSearchFocused(false);
@@ -755,7 +831,7 @@ export default function HomeScreen() {
     }
     // Trigger search immediately with the selected suggestion
     performSearch(suggestion);
-  }, [performSearch]);
+  }, [canSearchByStore, performSearch]);
   
   // Filter products based on selected category
   
@@ -969,11 +1045,12 @@ export default function HomeScreen() {
                   )}
                   <TextInput
                     style={styles.searchInput}
-                    placeholder="Search products"
+                    placeholder={canSearchByStore ? "Search products" : "Select store to search"}
                     placeholderTextColor="#0f172a"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     onFocus={() => {
+                      if (!canSearchByStore) return;
                       setIsSearchFocused(true);
                       setSearchResults([]);
                     }}
@@ -987,6 +1064,7 @@ export default function HomeScreen() {
                     returnKeyType="search"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    editable={canSearchByStore}
                   />
                   {searchQuery.length > 0 && (
                     <TouchableOpacity
@@ -1039,6 +1117,37 @@ export default function HomeScreen() {
                     </ThemedText>
                   </TouchableOpacity>
                 ))}
+              </View>
+            )}
+            {!canSearchByStore && (
+              <View style={styles.storePromptContainer}>
+                <ThemedText style={styles.storePromptText}>
+                  {isStoreContextLoading
+                    ? 'Loading your active store...'
+                    : storeContextError || (isLoggedIn
+                      ? 'Select a store to search products.'
+                      : 'Log in to search store inventory.')}
+                </ThemedText>
+                {isStoreContextLoading ? (
+                  <ActivityIndicator size="small" color="#4a5568" />
+                ) : (
+                  <TouchableOpacity
+                    style={styles.storePromptButton}
+                    onPress={() => {
+                      if (isLoggedIn) {
+                        router.push('/find-store');
+                        return;
+                      }
+                      openLogin({ pathname: '/' });
+                    }}
+                    accessibilityRole="button"
+                    activeOpacity={0.85}
+                  >
+                    <ThemedText style={styles.storePromptButtonText}>
+                      {isLoggedIn ? 'Select store' : 'Log in'}
+                    </ThemedText>
+                  </TouchableOpacity>
+                )}
               </View>
             )}
           </View>
@@ -1095,7 +1204,7 @@ export default function HomeScreen() {
             ListHeaderComponent={
                 <View style={styles.sectionHeader}>
                   <ThemedText type="subtitle" style={[styles.sectionTitle, { color: '#000' }]}>
-                    Search Results for "{searchQuery}"
+                    {`Search Results for "${searchQuery}"`}
                   </ThemedText>
                 </View>
               }
@@ -1126,16 +1235,23 @@ export default function HomeScreen() {
               scrollEventThrottle={16}
             >
               {/* Show "no results" only when search was submitted (not focused) */}
-              {!isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && (
+              {!isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && canSearchByStore && (
                 <View style={styles.emptyState}>
                   <ThemedText style={styles.emptyStateText}>
-                    No products found for "{searchQuery}"
+                    {`No products found for "${searchQuery}"`}
+                  </ThemedText>
+                </View>
+              )}
+              {!canSearchByStore && (
+                <View style={styles.emptyState}>
+                  <ThemedText style={styles.emptyStateText}>
+                    {isLoggedIn ? 'Select a store to search products.' : 'Log in to search store inventory.'}
                   </ThemedText>
                 </View>
               )}
               
               {/* Show placeholder when search is focused but no query yet */}
-              {isSearchFocused && searchQuery.trim().length === 0 && (
+              {isSearchFocused && searchQuery.trim().length === 0 && canSearchByStore && (
                 <View style={styles.emptyState}>
                   <ThemedText style={styles.emptyStateText}>
                     Start typing to search products...
@@ -1144,10 +1260,10 @@ export default function HomeScreen() {
               )}
               
               {/* Show placeholder when search is focused with query but no results yet */}
-              {isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && (
+              {isSearchFocused && searchQuery.trim().length > 0 && searchResults.length === 0 && !searchLoading && canSearchByStore && (
                 <View style={styles.emptyState}>
                   <ThemedText style={styles.emptyStateText}>
-                    Press Enter to search for "{searchQuery}"
+                    {`Press Enter to search for "${searchQuery}"`}
                   </ThemedText>
                 </View>
               )}
@@ -1809,6 +1925,32 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#333',
+  },
+  storePromptContainer: {
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  storePromptText: {
+    fontSize: 13,
+    color: '#334155',
+  },
+  storePromptButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#0f172a',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  storePromptButtonText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '600',
   },
   loadingContainer: {
     paddingVertical: 40,

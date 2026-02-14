@@ -1,4 +1,4 @@
-import { Product as ApiProduct } from '../types/api';
+import { InventorySearchHit, Product as ApiProduct } from '../types/api';
 import { UIProduct } from '../types/ui';
 
 export function formatWeight(weight?: number, weightUnit?: string): string {
@@ -35,6 +35,28 @@ export function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {
   };
 }
 
-export function mapSearchHitToProduct(hit: ApiProduct & { score?: number }): UIProduct {
-  return mapApiProductToProduct(hit);
+export function mapSearchHitToProduct(hit: InventorySearchHit): UIProduct {
+  const category =
+    hit.categoryDisplayName ||
+    hit.subCategoryDisplayName ||
+    hit.categories ||
+    hit.subCategory ||
+    '';
+  const productName = hit.itemName || hit.productName || '';
+
+  return {
+    id: hit.id.toString(),
+    name: productName,
+    price: hit.price,
+    image: hit.imageUrl || '',
+    category,
+    inStock: hit.stockQuantity > 0,
+    weight: hit.weight,
+    weightUnit: hit.weightUnit,
+    calories: hit.calories,
+    brand: hit.brand || hit.brandName,
+    description: hit.description,
+    stockQuantity: hit.stockQuantity,
+    popularityScore: hit.popularityScore,
+  };
 }
