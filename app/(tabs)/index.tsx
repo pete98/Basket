@@ -1,12 +1,17 @@
+import { ProductCard } from '@/components/product-card';
 import { ThemedText } from '@/components/themed-text';
 import { getCategoryVisual } from '@/constants/category-visuals';
-import { useCart } from '@/contexts/cart-context';
 import { useLocation } from '@/contexts/location-context';
+import { useCart } from '@/contexts/cart-context';
 import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 import { fetchCategories } from '@/lib/api/categories';
-import { fetchProducts } from '@/lib/api/products';
+import { ApiClientError } from '@/lib/api/client';
+import { fetchProductsByCategoryName, fetchProductsBySubcategoryName } from '@/lib/api/products';
 import { getAutocompleteSuggestions, searchProducts } from '@/lib/api/search';
-import { Product as ApiProduct, Category } from '@/lib/types/api';
+import { Category } from '@/lib/types/api';
+import { UIProduct } from '@/lib/types/ui';
+import { buildCategoryNameCandidates } from '@/lib/utils/category';
+import { formatWeight, mapApiProductToProduct, mapSearchHitToProduct } from '@/lib/utils/products';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,6 +21,9 @@ import {
   Dimensions,
   FlatList,
   Image,
+  ImageBackground,
+  ImageSourcePropType,
+  Modal,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -23,12 +31,13 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const BANNER_WIDTH = SCREEN_WIDTH - 16;
 // Calculate category card width: (screen width - glass margins - glass padding - gaps) / cards per row
 // Glass container: 16px left + 16px right margins = 32px, 16px padding each side = 32px total
 // Compact design: smaller square/circular cards for horizontal scroll
@@ -44,19 +53,14 @@ const DEFAULT_CATEGORY_CODES = [
   'DAIRY_EGGS',
   'SNACKS_CHIPS',
   'BEV_SODA',
-  'FROZEN_MEALS',
-  'FRESH_PRODUCE',
 ];
 
 const DEFAULT_CATEGORY_NAMES = [
-  'Dairy & Eggs',
+  'Soda',
+  'Candy',
   'Dairy',
   'Snacks',
-  'Beverages',
-  'Frozen',
-  'Frozen & Pantry Meals',
-  'Fresh Produce',
-  'Produce',
+  'Energy',
 ];
 
 function tintWithAlpha(hexColor: string, alpha: number, fallback: string) {
@@ -76,151 +80,142 @@ function tintWithAlpha(hexColor: string, alpha: number, fallback: string) {
 }
 
 // Mock Data
-const banners = [
-  { id: '1', image: 'https://images.unsplash.com/photo-1559027615-cd4628902d4a?w=800' },
-  { id: '2', image: 'https://images.unsplash.com/photo-1584464491033-06628f3a6b7b?w=800' },
-  { id: '3', image: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?w=800' },
-  { id: '4', image: 'https://images.unsplash.com/photo-1481349518771-20055b2a7b24?w=800' },
+
+interface HeroOfferCard {
+  id: string;
+  title: string;
+  value: string;
+  detail: string;
+  image: ImageSourcePropType;
+}
+
+const heroCards: HeroOfferCard[] = [
+  {
+    id: 'membership',
+    title: 'Membership',
+    value: 'Standard',
+    detail: '0.00 cashback',
+    image: require('../../assets/for-you/A_user_interface_design_of_a_grocery_shopping_mobi.png'),
+  },
+  {
+    id: 'purchase-power',
+    title: 'Purchase Power',
+    value: 'Boosted',
+    detail: 'Action required',
+    image: require('../../assets/for-you/A_user_interface_design_of_a_grocery_shopping_mobi.png'),
+  },
+  {
+    id: 'milk-deal',
+    title: 'Fresh Dairy',
+    value: 'Milk',
+    detail: 'Buy 1 get 1',
+    image: { uri: 'https://images.unsplash.com/photo-1550583724-b2692b85b150?w=800' },
+  },
+  {
+    id: 'soda-deal',
+    title: 'Sparkling',
+    value: 'Soda',
+    detail: '2 for $5',
+    image: { uri: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=800' },
+  },
+  {
+    id: 'fruit-deal',
+    title: 'Fresh Picks',
+    value: 'Fruits',
+    detail: 'Seasonal drop',
+    image: { uri: 'https://images.unsplash.com/photo-1490474418585-ba9bad8fd0ea?w=800' },
+  },
+  {
+    id: 'bakery-deal',
+    title: 'Bakery',
+    value: 'Daily',
+    detail: 'Warm & fresh',
+    image: { uri: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=800' },
+  },
+  {
+    id: 'coffee-deal',
+    title: 'Morning Brew',
+    value: 'Coffee',
+    detail: 'New blends',
+    image: { uri: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=800' },
+  },
 ];
 
-// Product interface for UI display (mapped from API response)
-interface UIProduct {
-  id: string;
-  name: string;
-  price: number;
-  originalPrice?: number;
-  image: string;
-  category: string;
-  inStock: boolean;
-  discount?: number;
-  weight?: number;
-  weightUnit?: string;
-  calories?: number;
-  brand?: string;
-  description?: string;
-  stockQuantity?: number;
-  popularityScore?: number;
+function dedupeProductsById(items: UIProduct[]): UIProduct[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 
-// Helper function to format weight with unit
-function formatWeight(weight?: number, weightUnit?: string): string {
-  if (!weight) return '';
-  
-  const unit = weightUnit?.toUpperCase();
-  if (unit === 'GRAM') {
-    return `${weight}g`;
-  } else if (unit === 'OZ') {
-    return `${weight}oz`;
-  } else if (weightUnit) {
-    // Fallback for other units
-    return `${weight} ${weightUnit.toLowerCase()}`;
-  }
-  return weight.toString();
+function isApiClientError(error: unknown): error is ApiClientError {
+  return error instanceof ApiClientError;
 }
 
-// Helper function to map API product (InventoryResponseDTO) to UI product
-function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {
-  // Parse labels string (e.g., "organic,local") into array
-  const labels = apiProduct.labels ? apiProduct.labels.split(',').map(l => l.trim()) : [];
-  
-  return {
-    id: apiProduct.id.toString(),
-    name: apiProduct.itemName,
-    price: apiProduct.price,
-    image: apiProduct.imageUrl,
-    category: apiProduct.categories || apiProduct.subCategory || '',
-    inStock: apiProduct.stockQuantity > 0,
-    weight: apiProduct.weight,
-    weightUnit: apiProduct.weightUnit,
-    calories: apiProduct.calories,
-    brand: apiProduct.brand,
-    description: apiProduct.description,
-    stockQuantity: apiProduct.stockQuantity,
-    popularityScore: apiProduct.popularityScore,
-  };
-}
+async function fetchProductsForCategory(category: Category): Promise<UIProduct[]> {
+  const candidates = buildCategoryNameCandidates(category);
+  let lastError: Error | null = null;
 
-// Helper function to map search hit (InventorySearchHit) to UI product
-function mapSearchHitToProduct(hit: ApiProduct & { score?: number }): UIProduct {
-  // Search hits are full InventoryResponseDTO objects, so we can use the same mapping
-  return mapApiProductToProduct(hit);
-}
-
-function BannerCarousel() {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [isScrolling, setIsScrolling] = useState(false);
-
-  useEffect(() => {
-    const startTimer = () => {
-      const timer = setInterval(() => {
-        setCurrentIndex((prev) => {
-          const next = (prev + 1) % banners.length;
-          flatListRef.current?.scrollToIndex({ index: next, animated: true });
-          return next;
-        });
-      }, 3000);
-      timerRef.current = timer;
-    };
-
-    if (!isScrolling) {
-      startTimer();
-    }
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
+  for (const name of candidates) {
+    try {
+      const categoryProducts = await fetchProductsByCategoryName(name);
+      if (categoryProducts.length > 0) {
+        return categoryProducts.map(mapApiProductToProduct);
       }
-    };
-  }, [isScrolling]);
-
-  const onScrollBeginDrag = () => {
-    setIsScrolling(true);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Failed to fetch category products');
     }
-  };
 
-  const onScrollEnd = () => {
-    setIsScrolling(false);
-  };
+    try {
+      const subcategoryProducts = await fetchProductsBySubcategoryName(name);
+      if (subcategoryProducts.length > 0) {
+        return subcategoryProducts.map(mapApiProductToProduct);
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Failed to fetch subcategory products');
+    }
+  }
 
-  const onMomentumScrollEnd = (event: any) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / BANNER_WIDTH);
-    setCurrentIndex(index);
-  };
+  if (lastError) throw lastError;
+  return [];
+}
+
+function HeroSection() {
+  const { width } = useWindowDimensions();
+  const heroCardSize = Math.min(220, Math.round(width * 0.52));
+  const snapInterval = heroCardSize + 14;
 
   return (
-    <View>
+    <View style={[styles.heroSection, { minHeight: heroCardSize + 64 }]}>
+      <View style={[styles.heroBackdrop, { height: heroCardSize + 92 }]}>
+        <View style={styles.heroGlowTop} />
+        <View style={styles.heroGlowBottom} />
+      </View>
       <FlatList
-        ref={flatListRef}
-        data={banners}
+        data={heroCards}
         horizontal
-        pagingEnabled
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.id}
-        onScrollBeginDrag={onScrollBeginDrag}
-        onMomentumScrollEnd={onMomentumScrollEnd}
-        onScrollEndDrag={onScrollEnd}
+        snapToInterval={snapInterval}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        contentContainerStyle={styles.heroCardsRow}
         renderItem={({ item }) => (
-          <View style={styles.bannerContainer}>
-            <Image source={{ uri: item.image }} style={styles.banner} />
-          </View>
+          <ImageBackground
+            source={item.image}
+            style={[styles.heroCard, { width: heroCardSize, height: heroCardSize }]}
+            imageStyle={styles.heroCardImage}
+          >
+            <View style={styles.heroCardOverlay}>
+              <Text style={styles.heroCardTitle}>{item.title}</Text>
+              <Text style={styles.heroCardValue}>{item.value}</Text>
+              <Text style={styles.heroCardDetail}>{item.detail}</Text>
+            </View>
+          </ImageBackground>
         )}
       />
-      <View style={styles.dotsContainer}>
-        {banners.map((_, index) => (
-          <View
-            key={index}
-            style={[
-              styles.dot,
-              index === currentIndex && styles.activeDot,
-            ]}
-          />
-        ))}
-      </View>
     </View>
   );
 }
@@ -257,155 +252,16 @@ function CategoryCard({
   );
 }
 
-function ProductCard({ product }: { product: UIProduct }) {
-  const router = useRouter();
-  const { addItem, updateQuantity, removeItem, state } = useCart();
-  
-  // Find if this product is in cart and get its quantity
-  const cartItem = state.items.find(item => item.id === product.id);
-  const quantity = cartItem?.quantity || 0;
-  
-  const handleAddToCart = () => {
-    addItem({
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      image: product.image || '',
-    });
-  };
-
-  const handleIncrement = () => {
-    if (quantity === 0) {
-      handleAddToCart();
-    } else {
-      updateQuantity(product.id, quantity + 1);
-    }
-  };
-
-  const handleDecrement = () => {
-    if (quantity > 1) {
-      updateQuantity(product.id, quantity - 1);
-    } else if (quantity === 1) {
-      removeItem(product.id);
-    }
-  };
-
-  const handleProductPress = () => {
-    router.push({
-      pathname: '/product-detail',
-      params: {
-        id: product.id,
-        name: product.name,
-        price: product.price.toString(),
-        image: product.image || '',
-        brand: product.brand || '',
-        description: product.description || '',
-        weight: product.weight?.toString() || '',
-        weightUnit: product.weightUnit || '',
-        calories: product.calories?.toString() || '',
-        stockQuantity: product.stockQuantity?.toString() || '100',
-        popularityScore: product.popularityScore?.toString() || '999',
-        category: product.category || '',
-      },
-    });
-  };
-
-  const formattedWeight = formatWeight(product.weight, product.weightUnit);
-  const weightCaloriesText = 
-    formattedWeight && product.calories 
-      ? `${formattedWeight} • ${product.calories} cals`
-      : formattedWeight 
-        ? formattedWeight
-        : product.calories 
-          ? `${product.calories} cals`
-          : '';
-
-  return (
-    <View style={styles.productCard}>
-      {/* Quantity Counter or Add to Cart Icon - Top Right */}
-      {quantity > 0 ? (
-        <View style={styles.quantityCounter}>
-          <TouchableOpacity
-            style={styles.quantityButton}
-            onPress={handleDecrement}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.6}
-          >
-            <View style={styles.quantityButtonInner}>
-              <Ionicons name="remove" size={16} color="#007AFF" />
-            </View>
-          </TouchableOpacity>
-          <View style={styles.quantityNumberContainer}>
-            <Text style={styles.quantityText}>{quantity}</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.quantityButton}
-            onPress={handleIncrement}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            activeOpacity={0.6}
-          >
-            <View style={styles.quantityButtonInner}>
-              <Ionicons name="add" size={16} color="#007AFF" />
-            </View>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity
-          style={styles.addToCartIcon}
-          onPress={handleAddToCart}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="add" size={20} color="#000" />
-        </TouchableOpacity>
-      )}
-
-      {/* Tappable Product Content */}
-      <TouchableOpacity
-        onPress={handleProductPress}
-        activeOpacity={0.7}
-        style={styles.productContent}
-      >
-        {/* Product Image */}
-        {product.image ? (
-          <Image 
-            source={{ uri: product.image }} 
-            style={styles.productImage}
-            resizeMode="contain"
-          />
-        ) : (
-          <View style={[styles.productImage, styles.productImagePlaceholder]}>
-            <Ionicons name="image-outline" size={32} color="#ccc" />
-          </View>
-        )}
-
-        {/* Product Name */}
-        <ThemedText style={styles.productName} numberOfLines={2}>
-          {product.name}
-        </ThemedText>
-
-        {/* Weight and Calories */}
-        {weightCaloriesText ? (
-          <ThemedText style={styles.productWeightCalories}>
-            {weightCaloriesText}
-          </ThemedText>
-        ) : null}
-
-        {/* Price */}
-        <ThemedText style={styles.productPrice}>${product.price.toFixed(2)}</ThemedText>
-      </TouchableOpacity>
-    </View>
-  );
-}
-
 function ProductSection({ 
   title, 
   products,
   iconUri,
+  onProductPress,
 }: { 
   title: string; 
   products: UIProduct[];
   iconUri?: string;
+  onProductPress: (product: UIProduct) => void;
  }) {
   // Show section even if empty (for debugging - helps see which categories are loaded)
   const hasProducts = products && products.length > 0;
@@ -426,7 +282,7 @@ function ProductSection({
           </ThemedText>
         </View>
         {hasProducts && (
-          <TouchableOpacity onPress={() => console.log(`See all ${title}`)}>
+        <TouchableOpacity onPress={() => undefined}>
             <ThemedText style={styles.seeAllText}>See All</ThemedText>
           </TouchableOpacity>
         )}
@@ -440,7 +296,7 @@ function ProductSection({
           contentContainerStyle={styles.productList}
           renderItem={({ item }) => (
             <View style={styles.productCardWrapper}>
-              <ProductCard product={item} />
+              <ProductCard product={item} onPress={onProductPress} />
             </View>
           )}
         />
@@ -451,6 +307,7 @@ function ProductSection({
           </ThemedText>
         </View>
       )}
+
     </View>
   );
 }
@@ -460,6 +317,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { selectedLocation } = useLocation();
+  const { addItem, updateQuantity, state } = useCart();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -469,6 +327,14 @@ export default function HomeScreen() {
   const [categorySectionHeight, setCategorySectionHeight] = useState(0);
   const [isCategoryHidden, setIsCategoryHidden] = useState(false);
   const scrollOffsetRef = useRef(0);
+  const [isProductModalVisible, setIsProductModalVisible] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
+  const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
+  const [selectedQuantity, setSelectedQuantity] = useState(1);
+  const [addButtonState, setAddButtonState] = useState<'idle' | 'added'>('idle');
+  const addToCartScale = useRef(new Animated.Value(1)).current;
+  const addButtonFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeModalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleContentScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -492,10 +358,129 @@ export default function HomeScreen() {
       useNativeDriver: false,
     }).start();
   }, [isSearchFocused, searchTransition]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setSelectedCategoryId(null);
+    }, [])
+  );
+
+  function openProductModal(product: UIProduct) {
+    const cartItem = state.items.find((item) => item.id === product.id);
+    if (addButtonFeedbackTimer.current) {
+      clearTimeout(addButtonFeedbackTimer.current);
+    }
+    if (closeModalTimer.current) {
+      clearTimeout(closeModalTimer.current);
+    }
+    setSelectedProduct(product);
+    setSelectedQuantity(cartItem?.quantity || 1);
+    setIsDescriptionOpen(false);
+    setAddButtonState('idle');
+    addToCartScale.setValue(1);
+    setIsProductModalVisible(true);
+  }
+
+  function closeProductModal() {
+    setIsProductModalVisible(false);
+    setSelectedProduct(null);
+    setIsDescriptionOpen(false);
+  }
+
+  function handleIncrement() {
+    setSelectedQuantity((prev) => prev + 1);
+  }
+
+  function handleDecrement() {
+    setSelectedQuantity((prev) => (prev > 1 ? prev - 1 : 1));
+  }
+
+  function handleAddToCart() {
+    if (!selectedProduct) return;
+    const desiredQuantity = Math.max(selectedQuantity, 1);
+    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
+    const quantity = cartItem?.quantity || 0;
+    const selectedProductPrice =
+      typeof selectedProduct.price === 'number' && Number.isFinite(selectedProduct.price)
+        ? selectedProduct.price
+        : 0;
+
+    if (quantity === 0) {
+      addItem({
+        id: selectedProduct.id,
+        name: selectedProduct.name,
+        price: selectedProductPrice,
+        image: selectedProduct.image || '',
+      });
+      if (desiredQuantity > 1) {
+        updateQuantity(selectedProduct.id, desiredQuantity);
+      }
+      return;
+    }
+
+    updateQuantity(selectedProduct.id, desiredQuantity);
+  }
+
+  function handleAddToCartPress() {
+    handleAddToCart();
+    setAddButtonState('added');
+
+    if (addButtonFeedbackTimer.current) {
+      clearTimeout(addButtonFeedbackTimer.current);
+    }
+    addButtonFeedbackTimer.current = setTimeout(() => {
+      setAddButtonState('idle');
+    }, 1200);
+
+    if (closeModalTimer.current) {
+      clearTimeout(closeModalTimer.current);
+    }
+    closeModalTimer.current = setTimeout(() => {
+      closeProductModal();
+    }, 700);
+
+    Animated.sequence([
+      Animated.timing(addToCartScale, {
+        toValue: 0.95,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.spring(addToCartScale, {
+        toValue: 1.05,
+        friction: 4,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+      Animated.spring(addToCartScale, {
+        toValue: 1,
+        friction: 5,
+        tension: 60,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
+    setSelectedQuantity(cartItem?.quantity || 1);
+  }, [selectedProduct, state.items]);
+
+  useEffect(() => {
+    return () => {
+      if (addButtonFeedbackTimer.current) {
+        clearTimeout(addButtonFeedbackTimer.current);
+      }
+      if (closeModalTimer.current) {
+        clearTimeout(closeModalTimer.current);
+      }
+    };
+  }, []);
   
   // API state
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<UIProduct[]>([]);
+  const [categoryProducts, setCategoryProducts] = useState<Record<number, UIProduct[]>>({});
   const [searchResults, setSearchResults] = useState<UIProduct[]>([]);
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState<string[]>([]);
   
@@ -522,7 +507,6 @@ export default function HomeScreen() {
         setCategoriesLoading(true);
         setCategoriesError(null);
         const data = await fetchCategories();
-        console.log('Loaded categories:', data);
         setCategories(data || []);
       } catch (error) {
         setCategoriesError(error instanceof Error ? error.message : 'Failed to load categories');
@@ -535,37 +519,73 @@ export default function HomeScreen() {
     loadCategories();
   }, []);
   
-  // Fetch products based on selected category
+  // Fetch products grouped by category
   useEffect(() => {
-    async function loadProducts() {
+    async function loadCategoryProducts() {
+      if (categoriesLoading) {
+        setProductsLoading(true);
+        return;
+      }
+
+      if (categories.length === 0) {
+        setProductsLoading(false);
+        setProducts([]);
+        setCategoryProducts({});
+        return;
+      }
+
       try {
         setProductsLoading(true);
         setProductsError(null);
-        // Find the category from the selected category ID
-        const selectedCategory = categories.find(c => c.id === selectedCategoryId);
-        // Use displayName to match with product categories field
-        const categoryName = selectedCategory?.displayName;
-        console.log('Loading products for ZIP', selectedLocation.zip);
-        const data = await fetchProducts(categoryName ? { categoryId: categoryName } : undefined);
-        const mappedProducts = (data || []).map(mapApiProductToProduct);
-        setProducts(mappedProducts);
+
+        const results = await Promise.allSettled(
+          categories.map(async (category) => ({
+            categoryId: category.id,
+            products: await fetchProductsForCategory(category),
+          }))
+        );
+
+        const nextCategoryProducts: Record<number, UIProduct[]> = {};
+        const combinedProducts: UIProduct[] = [];
+        let hasError = false;
+
+        results.forEach((result, index) => {
+          const categoryId = categories[index]?.id;
+          if (result.status === 'fulfilled') {
+            nextCategoryProducts[result.value.categoryId] = result.value.products;
+            combinedProducts.push(...result.value.products);
+            return;
+          }
+          if (categoryId !== undefined) {
+            nextCategoryProducts[categoryId] = [];
+          }
+          console.error('Error fetching products for category:', result.reason);
+          hasError = true;
+        });
+
+        setCategoryProducts(nextCategoryProducts);
+        setProducts(dedupeProductsById(combinedProducts));
+        if (hasError) {
+          setProductsError('Some categories failed to load');
+        }
       } catch (error) {
         setProductsError(error instanceof Error ? error.message : 'Failed to load products');
         console.error('Error fetching products:', error);
-        setProducts([]); // Set empty array on error
+        setProducts([]);
+        setCategoryProducts({});
       } finally {
         setProductsLoading(false);
       }
     }
-    loadProducts();
-  }, [selectedCategoryId, categories, selectedLocation]);
+
+    loadCategoryProducts();
+  }, [categories, categoriesLoading, selectedLocation]);
   
   // Main search function - similar to Next.js performSearch
   const performSearch = useCallback(async (queryOverride?: string) => {
     try {
       setSearchLoading(true);
       setSearchError(null);
-      console.log('Performing search for ZIP', selectedLocation.zip);
 
       // Use provided query or fall back to current searchQuery state
       const queryToUse = queryOverride !== undefined ? queryOverride : searchQuery.trim();
@@ -590,34 +610,10 @@ export default function HomeScreen() {
       const mappedResults = (searchResponse.hits || []).map(mapSearchHitToProduct);
       setSearchResults(mappedResults);
     } catch (error) {
-      // If search endpoint doesn't exist (404), fall back to client-side filtering
-      if (error instanceof Error && error.message.includes('404')) {
-        console.log('Search endpoint not available, using client-side filtering');
-        // Filter products client-side as fallback
-        let filtered = products;
-        
-        // Apply category filter
-        if (selectedCategoryId !== null) {
-          const selectedCategory = categories.find((cat) => cat.id === selectedCategoryId);
-          if (selectedCategory) {
-            filtered = filtered.filter(p => 
-              p.category === selectedCategory.displayName || 
-              p.category === selectedCategory.code
-            );
-          }
-        }
-        
-        // Apply search query filter
-        const queryToUse = queryOverride !== undefined ? queryOverride : searchQuery.trim();
-        if (queryToUse) {
-          filtered = filtered.filter(p => 
-            p.name.toLowerCase().includes(queryToUse.toLowerCase()) ||
-            p.category.toLowerCase().includes(queryToUse.toLowerCase())
-          );
-        }
-        
-        setSearchResults(filtered);
-        setSearchError(null);
+      if (isApiClientError(error) && (error.status === 404 || error.status === 403)) {
+        applyClientSideSearch(queryOverride);
+      } else if (error instanceof Error && error.message.includes('404')) {
+        applyClientSideSearch(queryOverride);
       } else {
         setSearchError(error instanceof Error ? error.message : 'Failed to search products');
         console.error('Error searching products:', error);
@@ -627,6 +623,31 @@ export default function HomeScreen() {
       setSearchLoading(false);
     }
   }, [searchQuery, selectedCategoryId, categories, products, selectedLocation]);
+
+  function applyClientSideSearch(queryOverride?: string) {
+    let filtered = products;
+
+    if (selectedCategoryId !== null) {
+      const selectedCategory = categories.find((cat) => cat.id === selectedCategoryId);
+      if (selectedCategory) {
+        filtered = filtered.filter(p => 
+          p.category === selectedCategory.displayName || 
+          p.category === selectedCategory.code
+        );
+      }
+    }
+
+    const queryToUse = queryOverride !== undefined ? queryOverride : searchQuery.trim();
+    if (queryToUse) {
+      filtered = filtered.filter(p => 
+        p.name.toLowerCase().includes(queryToUse.toLowerCase()) ||
+        p.category.toLowerCase().includes(queryToUse.toLowerCase())
+      );
+    }
+
+    setSearchResults(filtered);
+    setSearchError(null);
+  }
 
   // Perform search when category filter changes (automatic trigger)
   useEffect(() => {
@@ -737,14 +758,6 @@ export default function HomeScreen() {
   }, [performSearch]);
   
   // Filter products based on selected category
-  const selectedCategory = categories.find(c => c.id === selectedCategoryId);
-  const selectedCategoryVisual = selectedCategory ? getCategoryVisual(selectedCategory) : null;
-  const filteredProducts = selectedCategory 
-    ? products.filter(p => 
-        p.category === selectedCategory.displayName || 
-        p.category === selectedCategory.code
-      )
-    : [];
   
   // Sort categories for the selector (horizontal scroll and grid)
   // Use displayOrder from API if available, otherwise maintain original order
@@ -765,19 +778,9 @@ export default function HomeScreen() {
     return 0;
   });
   
-  // Group products by category for display sections
-  const productsByCategory = products.reduce((acc, product) => {
-    if (!acc[product.category]) {
-      acc[product.category] = [];
-    }
-    acc[product.category].push(product);
-    return acc;
-  }, {} as Record<string, UIProduct[]>);
-  
   // Sort categories by displayOrder from API, or fallback to predefined order
   // Check if any categories have displayOrder (API-driven) vs using hardcoded list
   const hasDisplayOrderFromApi = categories.some(c => c.displayOrder !== undefined);
-  console.log('Categories loaded:', categories.length, 'Has displayOrder:', hasDisplayOrderFromApi);
   
   // Filter and sort categories to show (based on API displayOrder or default list)
   const categoriesToShow = categories
@@ -826,12 +829,10 @@ export default function HomeScreen() {
         );
         if (nameIndex !== -1) {
           // Map name index to code index (they should align)
-          // DAIRY_EGGS=0, SNACKS_CHIPS=1, BEV_SODA=2, FROZEN_MEALS=3, FRESH_PRODUCE=4
+          // DAIRY_EGGS=0, SNACKS_CHIPS=1, BEV_SODA=2
           if (nameIndex < 2) return 0; // Dairy
           if (nameIndex === 2) return 1; // Snacks
           if (nameIndex === 3) return 2; // Beverages
-          if (nameIndex >= 4 && nameIndex <= 5) return 3; // Frozen
-          if (nameIndex >= 6) return 4; // Produce
         }
         return -1;
       };
@@ -847,35 +848,30 @@ export default function HomeScreen() {
   
   // Map categories to their products (categories without products will have empty arrays)
   const sortedCategoryEntries = categoriesToShow.map((category) => {
-    // Try to find products for this category by matching category code or displayName
-    const categoryProducts = Object.entries(productsByCategory)
-      .filter(([categoryKey]) => {
-        // Match by category code, displayName, or any variation
-        return category.code === categoryKey || 
-               category.displayName === categoryKey ||
-               category.code.toLowerCase() === categoryKey.toLowerCase() ||
-               category.displayName.toLowerCase() === categoryKey.toLowerCase();
-      })
-      .flatMap(([, products]) => products);
-    
     return {
       category,
       categoryCode: category.code,
-      categoryProducts,
+      categoryProducts: categoryProducts[category.id] || [],
     };
   });
   
-  console.log('Categories to show:', categoriesToShow.length, categoriesToShow.map(c => c.displayName));
-  console.log('Sorted category entries:', sortedCategoryEntries.length);
   
+  const openCategoryProducts = useCallback((category: Category) => {
+    setSelectedCategoryId(category.id);
+    setIsCategoriesExpanded(false);
+    router.push({
+      pathname: '/category-products',
+      params: {
+        displayName: category.displayName,
+        code: category.code,
+      },
+    });
+  }, [router]);
+
   const handleCategoryPress = (categoryId: number) => {
-    console.log('Category pressed:', categoryId);
-    if (selectedCategoryId === categoryId) {
-      setSelectedCategoryId(null);
-    } else {
-      setSelectedCategoryId(categoryId);
-      setIsCategoriesExpanded(false);
-    }
+    const category = categories.find((item) => item.id === categoryId);
+    if (!category) return;
+    openCategoryProducts(category);
   };
 
   useEffect(() => {
@@ -885,17 +881,12 @@ export default function HomeScreen() {
                  cat.code.toLowerCase() === payload.category.trim().toLowerCase()
       );
       if (!targetCategory) return;
-
-      setIsCategoriesExpanded(true);
-      setSelectedCategoryId((prev) => (prev === targetCategory.id ? prev : targetCategory.id));
-      setTimeout(() => {
-        setIsCategoriesExpanded(false);
-      }, 300);
+      openCategoryProducts(targetCategory);
     };
 
     const unsubscribe = agentBus.on<SelectCategoryPayload>(AGENT_EVENTS.SelectCategory, handleAgentSelect);
     return unsubscribe;
-  }, [categories]);
+  }, [categories, openCategoryProducts]);
 
   const handleCategorySectionLayout = (event: any) => {
     const { height } = event.nativeEvent.layout;
@@ -905,6 +896,21 @@ export default function HomeScreen() {
   };
 
   const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 60;
+  const formattedWeight = selectedProduct ? formatWeight(selectedProduct.weight, selectedProduct.weightUnit) : '';
+  const weightCaloriesText =
+    formattedWeight && selectedProduct?.calories
+      ? `${formattedWeight} • ${selectedProduct.calories} cals`
+      : formattedWeight
+        ? formattedWeight
+        : selectedProduct?.calories
+          ? `${selectedProduct.calories} cals`
+          : '';
+  const normalizedName = selectedProduct?.name?.toLowerCase() ?? '';
+  const quantityLabel = normalizedName.includes('avocado') ? 'avocado' : 'item';
+  const selectedProductPrice =
+    selectedProduct && typeof selectedProduct.price === 'number' && Number.isFinite(selectedProduct.price)
+      ? selectedProduct.price
+      : 0;
 
   return (
     <View style={styles.container}>
@@ -965,7 +971,6 @@ export default function HomeScreen() {
                     style={styles.searchInput}
                     placeholder="Search products"
                     placeholderTextColor="#0f172a"
-                    keyboardAppearance="dark"
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     onFocus={() => {
@@ -1000,17 +1005,6 @@ export default function HomeScreen() {
 
                 {!isSearchFocused && (
                   <>
-                    <TouchableOpacity
-                      style={styles.locationButtonRight}
-                      onPress={() => router.push('/modal')}
-                    >
-                    <Ionicons name="location-outline" size={16} color="#000" />
-                      <ThemedText style={styles.locationZip} numberOfLines={1}>
-                        {selectedLocation.zip || 'ZIP'}
-                      </ThemedText>
-                    <Ionicons name="chevron-down" size={14} color="#000" style={styles.locationArrow} />
-                    </TouchableOpacity>
-
                     <TouchableOpacity
                       onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
                       style={styles.expandToggleButton}
@@ -1057,20 +1051,6 @@ export default function HomeScreen() {
           >
             {!isSearchFocused && searchQuery.trim().length === 0 && (
               <>
-                <TouchableOpacity
-                  style={styles.onboardingButton}
-                  activeOpacity={0.85}
-                  onPress={() => router.push('/onboarding')}
-                >
-                  <View style={styles.onboardingBadge}>
-                    <Ionicons name="sparkles-outline" size={14} color="#f97316" />
-                    <ThemedText style={styles.onboardingBadgeText}>New</ThemedText>
-                  </View>
-                  <ThemedText style={styles.onboardingButtonText} numberOfLines={1}>
-                    Finish your profile for smarter picks
-                  </ThemedText>
-                  <Ionicons name="chevron-forward" size={18} color="#0f172a" />
-                </TouchableOpacity>
                 {categoriesLoading ? (
                   <View style={styles.loadingContainer}>
                     <ActivityIndicator size="small" color="#4a5568" />
@@ -1090,24 +1070,7 @@ export default function HomeScreen() {
                       />
                     ))}
                   </View>
-                ) : (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoriesContainer}
-                    scrollEnabled={true}
-                    nestedScrollEnabled={true}
-                  >
-                    {sortedCategories.length > 0 && sortedCategories.map((category) => (
-                      <CategoryCard
-                        key={category.id}
-                        category={category}
-                        isSelected={selectedCategoryId === category.id}
-                        onPress={() => handleCategoryPress(category.id)}
-                      />
-                    ))}
-                  </ScrollView>
-                )}
+                ) : null}
               </>
             )}
           </View>
@@ -1150,7 +1113,7 @@ export default function HomeScreen() {
               ListFooterComponent={<View style={{ height: insets.bottom + 20 }} />}
               renderItem={({ item }) => (
                 <View style={styles.searchResultCardWrapper}>
-                  <ProductCard product={item} />
+                  <ProductCard product={item} onPress={openProductModal} />
                 </View>
               )}
             />
@@ -1210,28 +1173,10 @@ export default function HomeScreen() {
             <View style={styles.errorContainer}>
               <ThemedText style={styles.errorText}>{productsError}</ThemedText>
             </View>
-          ) : selectedCategoryId ? (
-            // Show filtered products when category is selected
-            filteredProducts.length > 0 ? (
-              <ProductSection 
-                title={`${selectedCategory?.displayName || 'Category'} Products`} 
-                products={filteredProducts}
-                iconUri={selectedCategoryVisual?.iconUri}
-              />
-            ) : (
-              <View style={styles.emptyState}>
-                <ThemedText style={styles.emptyStateText}>
-                  No products found in this category
-                </ThemedText>
-              </View>
-            )
           ) : (
             // Show all product sections when no category is selected
             <>
-              {/* Banner Carousel */}
-              <View style={styles.bannerSection}>
-                <BannerCarousel />
-              </View>
+              <HeroSection />
               {sortedCategoryEntries.length > 0 ? (
                 sortedCategoryEntries.map(({ category, categoryCode, categoryProducts }) => {
                   if (!category) return null;
@@ -1243,6 +1188,7 @@ export default function HomeScreen() {
                       title={category.displayName}
                       products={categoryProducts}
                       iconUri={visual.iconUri}
+                      onProductPress={openProductModal}
                     />
                   );
                 })
@@ -1258,6 +1204,121 @@ export default function HomeScreen() {
           <View style={{ height: insets.bottom + 20 }} />
         </ScrollView>
       )}
+
+      <Modal
+        visible={isProductModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={closeProductModal}
+      >
+        <View style={[styles.modalOverlay, { paddingTop: insets.top }]}>
+          <View style={[styles.modalCard, { paddingTop: 12 }]}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity
+                style={styles.modalCloseButton}
+                onPress={closeProductModal}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="close" size={22} color="#111322" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              style={styles.modalScroll}
+              contentContainerStyle={styles.modalScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalHeroCard}>
+                <View style={styles.modalHeroImageWrapper}>
+                  {selectedProduct?.image ? (
+                    <Image
+                      source={{ uri: selectedProduct.image }}
+                      style={styles.modalHeroImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <View style={styles.modalImagePlaceholder}>
+                      <Ionicons name="image-outline" size={72} color="#CED2DA" />
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.modalMeta}>
+                <ThemedText style={styles.modalTitle}>
+                  {selectedProduct?.name || 'Product'}
+                </ThemedText>
+                <Text style={styles.modalSubtitle}>
+                  {weightCaloriesText || `1 ${quantityLabel}`}
+                </Text>
+
+                <View style={styles.modalPriceRow}>
+                  <Text style={styles.modalSalePrice}>
+                    ${selectedProductPrice.toFixed(2)}
+                  </Text>
+                  {selectedProduct ? (
+                    <Text style={styles.modalOriginalPrice}>
+                      ${(selectedProductPrice * 1.13).toFixed(2)}
+                    </Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.modalDetailBlock}>
+                  <TouchableOpacity
+                    style={styles.modalAccordionHeader}
+                    onPress={() => setIsDescriptionOpen((prev) => !prev)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.modalAccordionTitle}>Product detail</Text>
+                    <Ionicons
+                      name={isDescriptionOpen ? 'chevron-up' : 'chevron-down'}
+                      size={20}
+                      color="#111322"
+                    />
+                  </TouchableOpacity>
+                  {isDescriptionOpen ? (
+                    <Text style={styles.modalDescription}>
+                      {selectedProduct?.description || 'No description available.'}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalFooter}>
+              <View style={styles.stepper}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={handleDecrement}
+                  disabled={selectedQuantity <= 1}
+                >
+                  <Text style={[styles.stepperButtonText, selectedQuantity <= 1 && styles.disabledText]}>
+                    -
+                  </Text>
+                </TouchableOpacity>
+                <Text style={styles.quantityText}>{selectedQuantity}</Text>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={handleIncrement}
+                >
+                  <Text style={styles.stepperButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+              <Animated.View style={[styles.cartButtonWrapper, { transform: [{ scale: addToCartScale }] }]}>
+                <TouchableOpacity
+                  style={styles.cartButton}
+                  onPress={handleAddToCartPress}
+                  activeOpacity={0.9}
+                >
+                  <Text style={styles.cartButtonText}>
+                    {addButtonState === 'added' ? 'Item added!' : 'Add to Cart'}
+                  </Text>
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1299,23 +1360,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 8,
   },
-  locationButtonRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-  },
-  locationZip: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  locationArrow: {
-    marginLeft: 2,
-  },
   categoriesWrapper: {
     overflow: 'hidden',
   },
@@ -1323,9 +1367,6 @@ const styles = StyleSheet.create({
     maxHeight: 0,
     opacity: 0,
     overflow: 'hidden',
-  },
-  categoriesWrapperCollapsed: {
-    maxHeight: 85,
   },
   categoriesGridContainer: {
     flexDirection: 'row',
@@ -1335,47 +1376,177 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     marginLeft: 0,
   },
-  onboardingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: '#fef3c7',
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-    marginTop: 4,
-  },
-  onboardingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: '#fffbeb',
-    marginRight: 8,
-    gap: 4,
-  },
-  onboardingBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#f97316',
-    textTransform: 'uppercase',
-  },
-  onboardingButtonText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginRight: 6,
-  },
   scrollView: {
     flex: 1,
     backgroundColor: '#fff',
   },
   scrollContent: {
     // Content flows naturally with category section at top
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    backgroundColor: '#6B6B6B',
+  },
+  modalCard: {
+    height: '100%',
+    marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingBottom: 6,
+  },
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalScroll: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingBottom: 24,
+  },
+  modalHeroCard: {
+    marginHorizontal: 24,
+    marginTop: 6,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    overflow: 'hidden',
+  },
+  modalHeroImageWrapper: {
+    height: 240,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  modalImagePlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F6F7FB',
+  },
+  modalMeta: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#667085',
+    marginTop: 4,
+  },
+  modalPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 10,
+    marginTop: 14,
+  },
+  modalSalePrice: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  modalOriginalPrice: {
+    fontSize: 16,
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  modalDetailBlock: {
+    marginTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
+    paddingTop: 14,
+  },
+  modalAccordionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalAccordionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  modalDescription: {
+    fontSize: 15,
+    color: '#475467',
+    lineHeight: 22,
+    marginTop: 10,
+  },
+  modalFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+    backgroundColor: '#FFFFFF',
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 30,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  stepperButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButtonText: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  disabledText: {
+    color: '#CFD3DA',
+  },
+  quantityText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginHorizontal: 12,
+  },
+  cartButton: {
+    flex: 1,
+    marginLeft: 12,
+    backgroundColor: '#0DB44D',
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+  },
+  cartButtonText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  cartButtonWrapper: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -1388,47 +1559,89 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
   },
-  bannerSection: {
-    marginTop: 16,
-    marginBottom: 24,
-    paddingHorizontal: 8,
-  },
-  bannerContainer: {
-    width: BANNER_WIDTH,
-    height: 200,
-    borderRadius: 12,
-    overflow: 'hidden',
-    marginRight: 8,
-  },
-  banner: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  dotsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  heroSection: {
+    position: 'relative',
     marginTop: 12,
-    gap: 8,
+    marginBottom: 24,
+    paddingHorizontal: 16,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#ddd',
+  heroBackdrop: {
+    position: 'absolute',
+    top: -12,
+    left: 0,
+    right: 0,
+    height: 220,
+    backgroundColor: 'transparent',
+    borderRadius: 24,
   },
-  activeDot: {
-    backgroundColor: '#4a5568',
-    width: 24,
+  heroGlowTop: {
+    position: 'absolute',
+    top: -20,
+    right: -40,
+    width: 180,
+    height: 140,
+    borderRadius: 90,
+    backgroundColor: 'transparent',
+    opacity: 0.45,
+  },
+  heroGlowBottom: {
+    position: 'absolute',
+    bottom: -30,
+    left: -30,
+    width: 200,
+    height: 160,
+    borderRadius: 100,
+    backgroundColor: 'transparent',
+    opacity: 0.4,
+  },
+  heroCardsRow: {
+    gap: 14,
+    paddingTop: 16,
+    paddingBottom: 4,
+    paddingHorizontal: 4,
+  },
+  heroCard: {
+    backgroundColor: 'transparent',
+    borderRadius: 22,
+    padding: 14,
+    borderWidth: 0,
+    shadowColor: '#9a3412',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  heroCardImage: {
+    borderRadius: 22,
+  },
+  heroCardOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 14,
+    borderRadius: 22,
+    backgroundColor: 'transparent',
+  },
+  heroCardTitle: {
+    fontSize: 12,
+    color: '#FFFFFF',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  heroCardValue: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  heroCardDetail: {
+    fontSize: 12,
+    color: '#FFFFFF',
   },
   sectionTitle: {
     paddingHorizontal: 8,
     marginBottom: 12,
     fontSize: 20,
     fontWeight: 'bold',
-  },
-  categoriesContainer: {
-    gap: 12,
   },
   categoryPill: {
     paddingHorizontal: 16,
@@ -1575,107 +1788,6 @@ const styles = StyleSheet.create({
   searchResultCardWrapper: {
     flex: 1,
     maxWidth: '48%',
-  },
-  productCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 8,
-    width: '100%',
-    position: 'relative',
-    flex: 1,
-  },
-  productContent: {
-    flex: 1,
-  },
-  addToCartIcon: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  quantityCounter: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#007AFF',
-    paddingHorizontal: 2,
-    paddingVertical: 2,
-    zIndex: 10,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
-    minHeight: 32,
-  },
-  quantityButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 4,
-  },
-  quantityButtonInner: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#f0f7ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quantityNumberContainer: {
-    minWidth: 28,
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  quantityText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#007AFF',
-    textAlign: 'center',
-  },
-  productImage: {
-    width: '100%',
-    height: 120,
-    borderRadius: 8,
-    marginBottom: 8,
-    backgroundColor: '#fff',
-  },
-  productImagePlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    minHeight: 15,
-    color: '#000',
-  },
-  productWeightCalories: {
-    fontSize: 13,
-    color: '#666'
-  },
-  productPrice: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4a5568',
   },
   autocompleteContainer: {
     marginTop: 4,

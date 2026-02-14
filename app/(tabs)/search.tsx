@@ -1,4 +1,3 @@
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { GlassView } from 'expo-glass-effect';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -6,11 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function SearchScreen() {
   const [query, setQuery] = useState('');
-  const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
-
-  // Style helpers
-  const isDark = colorScheme === 'dark';
 
   return (
     <ScrollView
@@ -19,13 +14,11 @@ function SearchScreen() {
         {
           paddingTop: insets.top + 24,
           paddingBottom: insets.bottom,
-          backgroundColor: isDark ? '#19191c' : '#f7f7f9',
+          backgroundColor: '#f7f7f9',
         },
       ]}
       contentContainerStyle={styles.contentContainer}>
-      <Text style={[styles.label, { color: isDark ? '#fff' : '#18181a' }]}>
-        Search
-      </Text>
+      <Text style={styles.label}>Search</Text>
       <GlassView
         glassEffectStyle="regular"
         tintColor="rgba(255,255,255,0.25)"
@@ -34,10 +27,10 @@ function SearchScreen() {
         <TextInput
           style={[
             styles.input,
-            { color: isDark ? '#fff' : '#222', backgroundColor: 'transparent' },
+            { color: '#222', backgroundColor: 'transparent' },
           ]}
           placeholder="Type to search..."
-          placeholderTextColor={isDark ? '#aaa' : '#888'}
+          placeholderTextColor="#888"
           value={query}
           onChangeText={setQuery}
           returnKeyType="search"
@@ -48,10 +41,7 @@ function SearchScreen() {
       <View style={{ marginTop: 32, alignSelf: 'stretch' }}>
         <Text
           selectable
-          style={[
-            styles.results,
-            { color: isDark ? '#eee' : '#333' },
-          ]}
+          style={styles.results}
           accessibilityRole="text"
           accessibilityLabel={
             query.length > 0
@@ -82,6 +72,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     letterSpacing: 0.5,
     alignSelf: 'flex-start',
+    color: '#18181a',
   },
   glass: {
     width: '100%',
@@ -108,6 +99,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'left',
     opacity: 0.7,
+    color: '#333',
   },
 });
 

@@ -1,4 +1,5 @@
 import { useCart } from '@/contexts/cart-context';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
@@ -20,6 +21,7 @@ export default function CartScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { state, updateQuantity, removeItem } = useCart();
+  const { ensureAuthenticated } = useAuthGuard();
   const { items, total } = state;
 
   const taxRate = 0.06625; // Estimated tax rate
@@ -34,7 +36,7 @@ export default function CartScreen() {
 
   const handleCheckout = () => {
     if (!items.length) return;
-    router.push({
+    const checkoutTarget = {
       pathname: '/order-summary',
       params: {
         fulfillmentType: 'pickup',
@@ -43,7 +45,10 @@ export default function CartScreen() {
         pickupLocationName: pickupLocationLabel,
         deliveryFee: '0',
       },
-    });
+    };
+
+    if (!ensureAuthenticated(checkoutTarget)) return;
+    router.push(checkoutTarget);
   };
 
   const handleIncreaseQuantity = (id: string, currentQuantity: number) => {

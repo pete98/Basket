@@ -1,0 +1,43 @@
+import Constants from 'expo-constants';
+
+interface StripeExtra {
+  stripePublishableKey?: string;
+  stripeMerchantId?: string;
+  stripeUrlScheme?: string;
+  paymentsServiceBaseUrl?: string;
+  paymentSheetPath?: string;
+  orderServiceBaseUrl?: string;
+}
+
+const extra = (Constants.expoConfig?.extra ?? {}) as StripeExtra;
+
+function resolveStripeValue(value: string | undefined, name: string): string {
+  if (!value || value.startsWith('YOUR_STRIPE_')) {
+    console.warn(`[Stripe] Missing ${name}. Update your Expo config or env vars.`);
+    return '';
+  }
+  return value;
+}
+
+function buildPaymentSheetUrl(baseUrl: string, path: string): string {
+  if (!baseUrl) return '';
+  if (baseUrl.endsWith('/') && path.startsWith('/')) return `${baseUrl}${path.slice(1)}`;
+  if (!baseUrl.endsWith('/') && !path.startsWith('/')) return `${baseUrl}/${path}`;
+  return `${baseUrl}${path}`;
+}
+
+const paymentsServiceBaseUrl = extra.paymentsServiceBaseUrl ?? '';
+const paymentIntentPath = extra.paymentSheetPath ?? '/payments/intents';
+
+export const stripeConfig = {
+  publishableKey: resolveStripeValue(extra.stripePublishableKey, 'Stripe publishable key'),
+  merchantIdentifier: extra.stripeMerchantId ?? '',
+  urlScheme: extra.stripeUrlScheme ?? Constants.expoConfig?.scheme ?? '',
+  paymentsServiceBaseUrl,
+  paymentIntentPath,
+  paymentIntentUrl: buildPaymentSheetUrl(paymentsServiceBaseUrl, paymentIntentPath),
+};
+
+export const isStripeConfigured = Boolean(
+  stripeConfig.publishableKey && stripeConfig.paymentIntentUrl
+);

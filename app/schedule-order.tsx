@@ -1,6 +1,9 @@
 // import { DeliverySlot } from '@/lib/types/cart'; // Delivery feature temporarily disabled
+import { useCart } from '@/contexts/cart-context';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { useEffect } from 'react';
 // import { useState } from 'react'; // Delivery feature temporarily disabled
 import {
   Pressable,
@@ -14,6 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function ScheduleOrderScreen() {
   const router = useRouter();
+  const { state } = useCart();
+  const { isLoggedIn, ensureAuthenticated, openLogin } = useAuthGuard();
   /*
   const [selectedDate, setSelectedDate] = useState<string>('today');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<DeliverySlot | null>(null);
@@ -23,6 +28,12 @@ export default function ScheduleOrderScreen() {
   const pickupEtaMessage = 'Ready within about 15 minutes once the store confirms your order.';
   const pickupLocationLabel = 'Basket Market - Birmingham';
   const pickupLocationAddress = '617 Alabama Ave SW Birmingham, AL 35211';
+
+  useEffect(() => {
+    if (state.items.length > 0 && !isLoggedIn) {
+      openLogin({ pathname: '/schedule-order' });
+    }
+  }, [isLoggedIn, openLogin, state.items.length]);
 
   /*
   const getDates = () => {
@@ -68,7 +79,7 @@ export default function ScheduleOrderScreen() {
   */
 
   const handleContinue = () => {
-    router.replace({
+    const target = {
       pathname: '/order-summary',
       params: {
         fulfillmentType: 'pickup',
@@ -77,7 +88,10 @@ export default function ScheduleOrderScreen() {
         pickupLocationName: pickupLocationLabel,
         deliveryFee: '0',
       },
-    });
+    };
+
+    if (!ensureAuthenticated(target)) return;
+    router.replace(target);
   };
 
   /*

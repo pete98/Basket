@@ -62,3 +62,25 @@ export interface AutocompleteResponse {
   suggestions: string[];
 }
 
+// Store types matching /api/stores/by-zip response
+export interface Store {
+  id: number;
+  code: string;
+  displayName: string;
+  phone?: string;
+  street: string;
+  street2?: string;
+  city: string;
+  state: string;
+  zip: string;
+  lat?: number;
+  lng?: number;
+  timezone?: string;
+  status: string;
+  pickupEnabled?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// API returns array directly, not wrapped in data/meta
+export type StoreResponse = Store[];

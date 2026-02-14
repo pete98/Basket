@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
@@ -10,6 +11,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { useAuth0 } from 'react-native-auth0';
+import { isAuth0Configured } from '@/lib/config/auth0';
+import { useAuthGuard } from '@/hooks/use-auth-guard';
 
 const accountActions = [
   {
@@ -19,10 +24,11 @@ const accountActions = [
     tint: '#EDF6FF',
   },
   {
-    title: 'Saved Addresses',
+    title: 'Saved Store',
     description: '2 delivery locations',
     icon: 'home-outline',
     tint: '#F5F0FF',
+    route: '/find-store',
   },
   {
     title: 'Security',
@@ -48,9 +54,29 @@ const supportOptions = [
 ];
 
 export default function UserProfile() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [promoEnabled, setPromoEnabled] = useState(false);
+  const { clearSession, user, isLoading } = useAuth0();
+  const { isLoggedIn, openLogin } = useAuthGuard();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const configReady = isAuth0Configured;
+
+  const handleLogin = useCallback(() => {
+    openLogin({ pathname: '/user' });
+  }, [openLogin]);
+
+  const handleLogout = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      await clearSession();
+    } catch (error) {
+      console.error('Auth0 logout failed', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [clearSession]);
 
   return (
     <View style={styles.container}>
@@ -66,108 +92,163 @@ export default function UserProfile() {
         style={styles.scrollView}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}>
-      <View style={styles.profileCard}>
-        <View style={styles.avatarWrapper}>
-          <Image
-            source={{ uri: 'https://randomuser.me/api/portraits/men/41.jpg' }}
-            style={styles.avatar}
-          />
-        </View>
-        <View style={styles.profileMeta}>
-          <Text style={styles.name}>John Doe</Text>
-          <Text style={styles.email}>john.doe@example.com</Text>
-          <View style={styles.badge}>
-            <Ionicons
-              name="star"
-              size={14}
-              color="#FFB100"
-              style={styles.badgeIcon}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarWrapper}>
+            <Image
+              source={{
+                uri: user?.picture ?? 'https://randomuser.me/api/portraits/men/41.jpg',
+              }}
+              style={styles.avatar}
             />
-            <Text style={styles.badgeText}>Premium member</Text>
           </View>
+          <View style={styles.profileMeta}>
+            <Text style={styles.name}>{user?.name ?? 'Guest shopper'}</Text>
+            <Text style={styles.email}>
+              {user?.email ?? 'Log in to personalize your account.'}
+            </Text>
+            {isLoggedIn && (
+              <View style={styles.badge}>
+                <Ionicons
+                  name="star"
+                  size={14}
+                  color="#FFB100"
+                  style={styles.badgeIcon}
+                />
+                <Text style={styles.badgeText}>Premium member</Text>
+              </View>
+            )}
+          </View>
+          {isLoggedIn && (
+            <Pressable style={styles.editButton}>
+              <Ionicons
+                name="create-outline"
+                size={16}
+                color="#1C1C1E"
+                style={styles.editIcon}
+              />
+              <Text style={styles.editButtonText}>Edit</Text>
+            </Pressable>
+          )}
         </View>
-        <Pressable style={styles.editButton}>
-          <Ionicons
-            name="create-outline"
-            size={16}
-            color="#1C1C1E"
-            style={styles.editIcon}
-          />
-          <Text style={styles.editButtonText}>Edit</Text>
-        </Pressable>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Account</Text>
-        {accountActions.map((item, index) => (
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Authentication</Text>
+          {!isLoggedIn && (
+            <Text style={styles.authHint}>
+              Log in to manage your account settings and saved info.
+            </Text>
+          )}
           <Pressable
-            key={item.title}
             style={({ pressed }) => [
-              styles.rowCard,
-              index > 0 && styles.rowSpacing,
+              styles.authButton,
+              isLoggedIn && styles.authButtonSecondary,
               pressed && styles.rowPressed,
-            ]}>
-            <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
-              <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
-            </View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>{item.title}</Text>
-              <Text style={styles.rowSubtitle}>{item.description}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+            ]}
+            onPress={
+              configReady ? (isLoggedIn ? handleLogout : handleLogin) : undefined
+            }
+            disabled={!configReady || isLoading || isProcessing}
+          >
+            {isProcessing ? (
+              <ActivityIndicator
+                size="small"
+                color={isLoggedIn ? '#1C1C1E' : '#fff'}
+              />
+            ) : (
+              <Text
+                style={[
+                  styles.authButtonText,
+                  isLoggedIn && styles.authButtonTextSecondary,
+                  !configReady && styles.authButtonTextSecondary,
+                ]}
+              >
+                {configReady ? (isLoggedIn ? 'Log out' : 'Log in') : 'Configure Auth0'}
+              </Text>
+            )}
           </Pressable>
-        ))}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Preferences</Text>
-        <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
-          <View>
-            <Text style={styles.rowTitle}>Push Notifications</Text>
-            <Text style={styles.rowSubtitle}>Updates for deliveries</Text>
-          </View>
-          <Switch
-            value={pushEnabled}
-            onValueChange={setPushEnabled}
-            thumbColor={pushEnabled ? '#fff' : '#f4f4f5'}
-            trackColor={{ false: '#d4d7e1', true: '#4CAF50' }}
-          />
         </View>
-        <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
-          <View>
-            <Text style={styles.rowTitle}>Promotions</Text>
-            <Text style={styles.rowSubtitle}>Personalized deals & tips</Text>
-          </View>
-          <Switch
-            value={promoEnabled}
-            onValueChange={setPromoEnabled}
-            thumbColor={promoEnabled ? '#fff' : '#f4f4f5'}
-            trackColor={{ false: '#d4d7e1', true: '#FF7849' }}
-          />
-        </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionLabel}>Support</Text>
-        {supportOptions.map((item, index) => (
-          <Pressable
-            key={item.title}
-            style={({ pressed }) => [
-              styles.rowCard,
-              index > 0 && styles.rowSpacing,
-              pressed && styles.rowPressed,
-            ]}>
-            <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
-              <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
+        {isLoggedIn && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Account</Text>
+            {accountActions.map((item, index) => (
+              <Pressable
+                key={item.title}
+                style={({ pressed }) => [
+                  styles.rowCard,
+                  index > 0 && styles.rowSpacing,
+                  pressed && styles.rowPressed,
+                ]}
+                onPress={() => {
+                  if (item.route) {
+                    router.push(item.route);
+                  }
+                }}
+              >
+                <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
+                  <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
+                </View>
+                <View style={styles.rowContent}>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <Text style={styles.rowSubtitle}>{item.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {isLoggedIn && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Preferences</Text>
+            <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
+              <View>
+                <Text style={styles.rowTitle}>Push Notifications</Text>
+                <Text style={styles.rowSubtitle}>Updates for deliveries</Text>
+              </View>
+              <Switch
+                value={pushEnabled}
+                onValueChange={setPushEnabled}
+                thumbColor={pushEnabled ? '#fff' : '#f4f4f5'}
+                trackColor={{ false: '#d4d7e1', true: '#4CAF50' }}
+              />
             </View>
-            <View style={styles.rowContent}>
-              <Text style={styles.rowTitle}>{item.title}</Text>
-              <Text style={styles.rowSubtitle}>{item.description}</Text>
+            <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
+              <View>
+                <Text style={styles.rowTitle}>Promotions</Text>
+                <Text style={styles.rowSubtitle}>Personalized deals & tips</Text>
+              </View>
+              <Switch
+                value={promoEnabled}
+                onValueChange={setPromoEnabled}
+                thumbColor={promoEnabled ? '#fff' : '#f4f4f5'}
+                trackColor={{ false: '#d4d7e1', true: '#FF7849' }}
+              />
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
-          </Pressable>
-        ))}
-      </View>
+          </View>
+        )}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Support</Text>
+          {supportOptions.map((item, index) => (
+            <Pressable
+              key={item.title}
+              style={({ pressed }) => [
+                styles.rowCard,
+                index > 0 && styles.rowSpacing,
+                pressed && styles.rowPressed,
+              ]}>
+              <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
+                <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.rowTitle}>{item.title}</Text>
+                <Text style={styles.rowSubtitle}>{item.description}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+            </Pressable>
+          ))}
+        </View>
     </ScrollView>
     </View>
   );
@@ -269,6 +350,32 @@ const styles = StyleSheet.create({
     color: '#667085',
     fontWeight: '600',
     marginBottom: 12,
+  },
+  authHint: {
+    fontSize: 13,
+    color: '#667085',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  authButton: {
+    height: 44,
+    borderRadius: 999,
+    backgroundColor: '#1C1C1E',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  authButtonSecondary: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#1C1C1E',
+  },
+  authButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  authButtonTextSecondary: {
+    color: '#1C1C1E',
   },
   rowCard: {
     flexDirection: 'row',
