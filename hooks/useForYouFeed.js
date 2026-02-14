@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { fetchProducts } from '../lib/api/products';
+import { useLocation } from '../contexts/location-context';
+import { getStoreInventory } from '../lib/api/stores';
 
 const HERO_PLACEHOLDER = require('../assets/for-you/A_user_interface_design_of_a_grocery_shopping_mobi.png');
 
@@ -110,7 +111,16 @@ function mapProductToFeedItem(product, index) {
 
 const PAGE_SIZE = 8;
 
+function parseStoreIdFromLocation(locationId) {
+  if (!locationId || typeof locationId !== 'string') return null;
+  if (!locationId.startsWith('store-')) return null;
+  const parsed = Number.parseInt(locationId.replace('store-', ''), 10);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
+}
+
 export function useForYouFeed() {
+  const { selectedLocation } = useLocation();
   const [items, setItems] = useState(buildBatch(0));
   const [inventoryFeed, setInventoryFeed] = useState([]);
   const [page, setPage] = useState(1);
@@ -146,9 +156,15 @@ export function useForYouFeed() {
   );
 
   const fetchInventory = useCallback(async () => {
+    const resolvedStoreId = parseStoreIdFromLocation(selectedLocation?.id);
+    if (!resolvedStoreId) {
+      hydrateFromProducts([]);
+      return;
+    }
+
     setIsRefreshing(true);
     try {
-      const products = await fetchProducts();
+      const products = await getStoreInventory({ storeId: resolvedStoreId });
       hydrateFromProducts(products);
       hasFetchedOnce.current = true;
     } catch (error) {
@@ -159,7 +175,7 @@ export function useForYouFeed() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [hydrateFromProducts]);
+  }, [hydrateFromProducts, selectedLocation?.id]);
 
   useEffect(() => {
     fetchInventory();

@@ -1,7 +1,7 @@
 import { ProductCard } from '@/components/product-card';
 import { ThemedText } from '@/components/themed-text';
 import { useCart } from '@/contexts/cart-context';
-import { fetchProductsByCategoryName, fetchProductsBySubcategoryName } from '@/lib/api/products';
+import { getStoreInventory } from '@/lib/api/stores';
 import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
 import { formatWeight, mapApiProductToProduct } from '@/lib/utils/products';
@@ -25,6 +25,30 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 interface CategoryParams {
   displayName?: string;
   code?: string;
+  storeId?: string;
+}
+
+function parseStoreIdParam(storeId: string | undefined): number | null {
+  if (!storeId) return null;
+  const parsedStoreId = Number.parseInt(storeId, 10);
+  if (Number.isNaN(parsedStoreId)) return null;
+  return parsedStoreId;
+}
+
+function normalizeCategoryValue(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
+
+function tokenizeCategoryValue(value: string): string[] {
+  if (!value.trim()) return [];
+  return value
+    .split(/[,/|>]/)
+    .map((token) => normalizeCategoryValue(token))
+    .filter((token) => token.length > 0);
 }
 
 export default function CategoryProductsScreen() {
@@ -56,9 +80,16 @@ export default function CategoryProductsScreen() {
       }),
     [params.code, params.displayName]
   );
+  const normalizedCategoryCandidates = useMemo(
+    () => categoryCandidates.map((candidate) => normalizeCategoryValue(candidate)),
+    [categoryCandidates]
+  );
+  const routeStoreId = parseStoreIdParam(typeof params.storeId === 'string' ? params.storeId : undefined);
+  const resolvedStoreId = routeStoreId;
 
   useEffect(() => {
     let isMounted = true;
+    const abortController = new AbortController();
 
     async function loadProducts() {
       if (categoryCandidates.length === 0) {
@@ -69,44 +100,35 @@ export default function CategoryProductsScreen() {
         return;
       }
 
+      if (resolvedStoreId === null) {
+        if (!isMounted) return;
+        setProducts([]);
+        setIsLoading(false);
+        setErrorMessage('Select a store to view category products.');
+        return;
+      }
+
       try {
         setIsLoading(true);
         setErrorMessage(null);
 
-        let lastError: Error | null = null;
-
-        for (const candidate of categoryCandidates) {
-          try {
-            const categoryProducts = await fetchProductsByCategoryName(candidate);
-            if (categoryProducts.length > 0) {
-              if (!isMounted) return;
-              setProducts(categoryProducts.map(mapApiProductToProduct));
-              setIsLoading(false);
-              return;
-            }
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error('Failed to load category products');
-          }
-
-          try {
-            const subcategoryProducts = await fetchProductsBySubcategoryName(candidate);
-            if (subcategoryProducts.length > 0) {
-              if (!isMounted) return;
-              setProducts(subcategoryProducts.map(mapApiProductToProduct));
-              setIsLoading(false);
-              return;
-            }
-          } catch (error) {
-            lastError = error instanceof Error ? error : new Error('Failed to load subcategory products');
-          }
-        }
+        const inventory = await getStoreInventory({
+          storeId: resolvedStoreId,
+          signal: abortController.signal,
+        });
+        const mappedProducts = inventory.map(mapApiProductToProduct);
+        const filteredProducts = mappedProducts.filter((product) => {
+          const productCategoryTokens = tokenizeCategoryValue(product.category || '');
+          if (productCategoryTokens.length === 0) return false;
+          return normalizedCategoryCandidates.some((candidate) =>
+            productCategoryTokens.some((token) => token === candidate)
+          );
+        });
 
         if (!isMounted) return;
-        setProducts([]);
-        if (lastError) {
-          setErrorMessage(lastError.message);
-        }
+        setProducts(filteredProducts);
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
         if (!isMounted) return;
         setProducts([]);
         setErrorMessage(error instanceof Error ? error.message : 'Failed to load products');
@@ -121,8 +143,9 @@ export default function CategoryProductsScreen() {
 
     return () => {
       isMounted = false;
+      abortController.abort();
     };
-  }, [categoryCandidates]);
+  }, [categoryCandidates, normalizedCategoryCandidates, resolvedStoreId]);
 
   function openProductModal(product: UIProduct) {
     const cartItem = state.items.find((item) => item.id === product.id);

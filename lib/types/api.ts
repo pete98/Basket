@@ -13,7 +13,7 @@ export interface Category {
 // API returns array directly, not wrapped in data/meta
 export type CategoryResponse = Category[];
 
-// Product types matching /api/inventory response (InventoryResponseDTO)
+// Product types matching store inventory item responses
 export interface Product {
   id: number;
   itemName: string;
@@ -112,3 +112,20 @@ export interface Store {
 
 // API returns array directly, not wrapped in data/meta
 export type StoreResponse = Store[];
+
+export interface StoreHomeLayoutSection {
+  type: 'hero' | 'category';
+  enabled?: boolean;
+  categoryId?: number;
+  title?: string;
+}
+
+export interface StoreHomeLayout {
+  storeId: number;
+  version: number;
+  categoryOrder: number[];
+  hiddenCategoryIds: number[];
+  pinnedCategoryIds: number[];
+  sections: StoreHomeLayoutSection[];
+  updatedAt: string;
+}

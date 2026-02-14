@@ -10,6 +10,10 @@ const API_BASE_URL =
   process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
   'https://cd7ba7c78881.ngrok-free.app';
 
+export function getInventoryServiceBaseUrl(): string {
+  return API_BASE_URL;
+}
+
 export interface ApiError {
   message: string;
   status?: number;
@@ -42,7 +46,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   try {
     return await response.json();
-  } catch (error) {
+  } catch {
     throw new ApiClientError('Failed to parse API response', response.status);
   }
 }

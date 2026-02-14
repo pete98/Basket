@@ -1,15 +1,14 @@
 import { ProductCard } from '@/components/product-card';
 import { ThemedText } from '@/components/themed-text';
-import { getCategoryVisual } from '@/constants/category-visuals';
 import { useLocation } from '@/contexts/location-context';
 import { useCart } from '@/contexts/cart-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
-import { fetchCategories } from '@/lib/api/categories';
-import { fetchProductsByCategoryName, fetchProductsBySubcategoryName } from '@/lib/api/products';
+import { getApiUrl, getInventoryServiceBaseUrl } from '@/lib/api/client';
 import { getAutocompleteSuggestions, searchProducts } from '@/lib/api/search';
+import { getStoreCategories, getStoreHomeLayout, getStoreInventory } from '@/lib/api/stores';
 import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
-import { Category } from '@/lib/types/api';
+import { Category, StoreHomeLayout } from '@/lib/types/api';
 import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
 import { formatWeight, mapApiProductToProduct, mapSearchHitToProduct } from '@/lib/utils/products';
@@ -94,6 +93,11 @@ interface HeroOfferCard {
   image: ImageSourcePropType;
 }
 
+interface HomeCategoryEntry {
+  category: Category;
+  sectionTitle: string;
+}
+
 const heroCards: HeroOfferCard[] = [
   {
     id: 'membership',
@@ -157,38 +161,116 @@ function dedupeProductsById(items: UIProduct[]): UIProduct[] {
 
 function getActiveStoreId(activeStore: unknown): number | null {
   if (!activeStore || typeof activeStore !== 'object') return null;
-  const store = activeStore as { storeId?: number; id?: number };
+  const store = activeStore as { storeId?: number | string; id?: number | string };
+
   if (typeof store.storeId === 'number') return store.storeId;
+  if (typeof store.storeId === 'string') {
+    const parsedStoreId = Number.parseInt(store.storeId, 10);
+    if (!Number.isNaN(parsedStoreId)) return parsedStoreId;
+  }
+
   if (typeof store.id === 'number') return store.id;
+  if (typeof store.id === 'string') {
+    const parsedId = Number.parseInt(store.id, 10);
+    if (!Number.isNaN(parsedId)) return parsedId;
+  }
+
   return null;
 }
 
-async function fetchProductsForCategory(category: Category): Promise<UIProduct[]> {
-  const candidates = buildCategoryNameCandidates(category);
-  let lastError: Error | null = null;
+function normalizeCategoryValue(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ');
+}
 
-  for (const name of candidates) {
-    try {
-      const categoryProducts = await fetchProductsByCategoryName(name);
-      if (categoryProducts.length > 0) {
-        return categoryProducts.map(mapApiProductToProduct);
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Failed to fetch category products');
-    }
+function tokenizeCategoryValue(value: string): string[] {
+  if (!value.trim()) return [];
+  return value
+    .split(/[,/|>]/)
+    .map((token) => normalizeCategoryValue(token))
+    .filter((token) => token.length > 0);
+}
 
-    try {
-      const subcategoryProducts = await fetchProductsBySubcategoryName(name);
-      if (subcategoryProducts.length > 0) {
-        return subcategoryProducts.map(mapApiProductToProduct);
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error('Failed to fetch subcategory products');
-    }
+function sanitizeCategoryTitle(value: string): string {
+  return value
+    .replace(/\p{Extended_Pictographic}/gu, '')
+    .replace(/[\u2600-\u27BF]/g, '')
+    .replace(/[\u200D\uFE0E\uFE0F\u20E3]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function coerceNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isNaN(parsed)) return parsed;
   }
+  return null;
+}
 
-  if (lastError) throw lastError;
-  return [];
+function coerceNumberArray(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => coerceNumber(value))
+    .filter((value): value is number => value !== null);
+}
+
+function buildSyntheticCategory(categoryId: number, title?: string | null): Category {
+  const fallbackTitle = sanitizeCategoryTitle(title?.trim() || `Category ${categoryId}`);
+  return {
+    id: categoryId,
+    code: `CATEGORY_${categoryId}`,
+    displayName: fallbackTitle,
+    description: '',
+    createdAt: '',
+    updatedAt: '',
+  };
+}
+
+function buildCategoryCandidateSet(category: Category): Set<string> {
+  const candidates = new Set<string>();
+  const names = buildCategoryNameCandidates(category);
+  names.forEach((name) => {
+    const normalized = normalizeCategoryValue(name);
+    if (normalized) candidates.add(normalized);
+    tokenizeCategoryValue(name).forEach((token) => candidates.add(token));
+  });
+  candidates.add(normalizeCategoryValue(category.displayName));
+  candidates.add(normalizeCategoryValue(category.code));
+  return candidates;
+}
+
+function buildCategoryProductsMap(
+  storeProducts: UIProduct[],
+  categories: Category[]
+): Record<number, UIProduct[]> {
+  const map: Record<number, UIProduct[]> = {};
+  const categoryCandidates = categories.map((category) => ({
+    categoryId: category.id,
+    candidates: buildCategoryCandidateSet(category),
+  }));
+
+  categories.forEach((category) => {
+    map[category.id] = [];
+  });
+
+  storeProducts.forEach((product) => {
+    const tokens = tokenizeCategoryValue(product.category || '');
+    if (tokens.length === 0) return;
+
+    const match = categoryCandidates.find(({ candidates }) =>
+      tokens.some((token) => candidates.has(token))
+    );
+    if (!match) return;
+
+    map[match.categoryId].push(product);
+  });
+
+  return map;
 }
 
 function HeroSection() {
@@ -255,7 +337,7 @@ function CategoryCard({
         ]}
         numberOfLines={1}
       >
-        {category.displayName}
+        {sanitizeCategoryTitle(category.displayName)}
       </ThemedText>
     </TouchableOpacity>
   );
@@ -264,12 +346,10 @@ function CategoryCard({
 function ProductSection({ 
   title, 
   products,
-  iconUri,
   onProductPress,
 }: { 
   title: string; 
   products: UIProduct[];
-  iconUri?: string;
   onProductPress: (product: UIProduct) => void;
  }) {
   // Show section even if empty (for debugging - helps see which categories are loaded)
@@ -279,15 +359,8 @@ function ProductSection({
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          {iconUri && (
-            <Image
-              source={{ uri: iconUri }}
-              style={styles.sectionTitleIcon}
-              resizeMode="contain"
-            />
-          )}
           <ThemedText type="subtitle" style={styles.sectionTitle}>
-            {title}
+            {sanitizeCategoryTitle(title)}
           </ThemedText>
         </View>
         {hasProducts && (
@@ -503,6 +576,8 @@ export default function HomeScreen() {
   const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
   const [isStoreContextLoading, setIsStoreContextLoading] = useState(false);
   const [storeContextError, setStoreContextError] = useState<string | null>(null);
+  const [homeLayout, setHomeLayout] = useState<StoreHomeLayout | null>(null);
+  const [homeLayoutError, setHomeLayoutError] = useState<string | null>(null);
   
   // Error states
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
@@ -513,13 +588,27 @@ export default function HomeScreen() {
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autocompleteAbortControllerRef = useRef<AbortController | null>(null);
-  const canSearchByStore = isLoggedIn && activeStoreId !== null;
+  const resolvedStoreId = activeStoreId;
+  const canSearchByStore = resolvedStoreId !== null;
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    console.log('[home] inventory base URL:', getInventoryServiceBaseUrl());
+    console.log('[home] store resolution:', {
+      activeStoreId,
+      resolvedStoreId,
+      selectedLocationId: selectedLocation.id,
+      isLoggedIn,
+    });
+  }, [activeStoreId, isLoggedIn, resolvedStoreId, selectedLocation.id]);
 
   useEffect(() => {
     if (!isLoggedIn) {
       setActiveStoreId(null);
       setStoreContextError(null);
       setIsStoreContextLoading(false);
+      setHomeLayout(null);
+      setHomeLayoutError(null);
       return;
     }
 
@@ -579,26 +668,90 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [getCredentials, isLoggedIn, selectedLocation.id]);
-  
-  // Fetch categories on mount
+  }, [getCredentials, isLoggedIn]);
+
   useEffect(() => {
-    async function loadCategories() {
+    if (resolvedStoreId === null) {
+      setHomeLayout(null);
+      setHomeLayoutError(null);
+      return;
+    }
+
+    let isActive = true;
+    const abortController = new AbortController();
+
+    async function loadHomeLayout() {
+      try {
+        setHomeLayoutError(null);
+        if (__DEV__) {
+          console.log('[home] requesting home-layout:', getApiUrl(`/api/stores/${resolvedStoreId}/home-layout`));
+        }
+        const layout = await getStoreHomeLayout({
+          storeId: resolvedStoreId,
+          signal: abortController.signal,
+        });
+        if (!isActive) return;
+        setHomeLayout(layout);
+      } catch (error) {
+        if (!isActive) return;
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setHomeLayout(null);
+        setHomeLayoutError(error instanceof Error ? error.message : 'Failed to load home layout');
+      }
+    }
+
+    void loadHomeLayout();
+
+    return () => {
+      isActive = false;
+      abortController.abort();
+    };
+  }, [resolvedStoreId]);
+  
+  // Fetch store categories only (no master categories)
+  useEffect(() => {
+    if (resolvedStoreId === null) {
+      setCategories([]);
+      setCategoriesError('Select a store to load categories.');
+      setCategoriesLoading(false);
+      return;
+    }
+
+    let isActive = true;
+    const abortController = new AbortController();
+
+    async function loadStoreCategories() {
       try {
         setCategoriesLoading(true);
         setCategoriesError(null);
-        const data = await fetchCategories();
+        if (__DEV__) {
+          console.log('[home] requesting store categories:', getApiUrl(`/api/stores/${resolvedStoreId}/categories`));
+        }
+        const data = await getStoreCategories({
+          storeId: resolvedStoreId,
+          signal: abortController.signal,
+        });
+        if (!isActive) return;
         setCategories(data || []);
       } catch (error) {
-        setCategoriesError(error instanceof Error ? error.message : 'Failed to load categories');
-        console.error('Error fetching categories:', error);
-        setCategories([]); // Set empty array on error
+        if (!isActive) return;
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setCategoriesError(error instanceof Error ? error.message : 'Failed to load store categories');
+        console.error('Error fetching store categories:', error);
+        setCategories([]);
       } finally {
+        if (!isActive) return;
         setCategoriesLoading(false);
       }
     }
-    loadCategories();
-  }, []);
+
+    void loadStoreCategories();
+
+    return () => {
+      isActive = false;
+      abortController.abort();
+    };
+  }, [resolvedStoreId]);
   
   // Fetch products grouped by category
   useEffect(() => {
@@ -615,43 +768,28 @@ export default function HomeScreen() {
         return;
       }
 
+      if (resolvedStoreId === null) {
+        setProductsLoading(false);
+        setProducts([]);
+        setCategoryProducts({});
+        setProductsError('Select a store to browse store inventory.');
+        return;
+      }
+
       try {
         setProductsLoading(true);
         setProductsError(null);
-
-        const results = await Promise.allSettled(
-          categories.map(async (category) => ({
-            categoryId: category.id,
-            products: await fetchProductsForCategory(category),
-          }))
-        );
-
-        const nextCategoryProducts: Record<number, UIProduct[]> = {};
-        const combinedProducts: UIProduct[] = [];
-        let hasError = false;
-
-        results.forEach((result, index) => {
-          const categoryId = categories[index]?.id;
-          if (result.status === 'fulfilled') {
-            nextCategoryProducts[result.value.categoryId] = result.value.products;
-            combinedProducts.push(...result.value.products);
-            return;
-          }
-          if (categoryId !== undefined) {
-            nextCategoryProducts[categoryId] = [];
-          }
-          console.error('Error fetching products for category:', result.reason);
-          hasError = true;
-        });
-
-        setCategoryProducts(nextCategoryProducts);
-        setProducts(dedupeProductsById(combinedProducts));
-        if (hasError) {
-          setProductsError('Some categories failed to load');
+        if (__DEV__) {
+          console.log('[home] requesting store inventory:', getApiUrl(`/api/stores/${resolvedStoreId}/inventory`));
         }
+        const storeInventory = await getStoreInventory({ storeId: resolvedStoreId });
+        const mappedStoreProducts = dedupeProductsById((storeInventory || []).map(mapApiProductToProduct));
+        const nextCategoryProducts = buildCategoryProductsMap(mappedStoreProducts, categories);
+        setCategoryProducts(nextCategoryProducts);
+        setProducts(mappedStoreProducts);
       } catch (error) {
-        setProductsError(error instanceof Error ? error.message : 'Failed to load products');
-        console.error('Error fetching products:', error);
+        setProductsError(error instanceof Error ? error.message : 'Failed to load store inventory');
+        console.error('Error fetching store inventory:', error);
         setProducts([]);
         setCategoryProducts({});
       } finally {
@@ -660,11 +798,11 @@ export default function HomeScreen() {
     }
 
     loadCategoryProducts();
-  }, [categories, categoriesLoading, selectedLocation]);
+  }, [categories, categoriesLoading, resolvedStoreId]);
   
   // Main search function - similar to Next.js performSearch
   const performSearch = useCallback(async (queryOverride?: string) => {
-    if (activeStoreId === null) {
+    if (resolvedStoreId === null) {
       setSearchResults([]);
       setAutocompleteSuggestions([]);
       setSearchError('Select a store to search products.');
@@ -688,7 +826,7 @@ export default function HomeScreen() {
       }
 
       const searchParams = {
-        storeId: activeStoreId,
+        storeId: resolvedStoreId,
         query: queryToUse || "*",
         category: categoryArray.length > 0 ? categoryArray : undefined,
         page: 1,
@@ -705,7 +843,7 @@ export default function HomeScreen() {
     } finally {
       setSearchLoading(false);
     }
-  }, [activeStoreId, searchQuery, selectedCategoryId, categories]);
+  }, [resolvedStoreId, searchQuery, selectedCategoryId, categories]);
 
   // Perform search when category filter changes (automatic trigger)
   useEffect(() => {
@@ -833,103 +971,37 @@ export default function HomeScreen() {
     performSearch(suggestion);
   }, [canSearchByStore, performSearch]);
   
-  // Filter products based on selected category
-  
-  // Sort categories for the selector (horizontal scroll and grid)
-  // Use displayOrder from API if available, otherwise maintain original order
-  const sortedCategories = [...categories].sort((a, b) => {
-    const orderA = a.displayOrder;
-    const orderB = b.displayOrder;
-    
-    // If both have displayOrder, sort by it
-    if (orderA !== undefined && orderB !== undefined) {
-      return orderA - orderB;
-    }
-    
-    // If only one has displayOrder, prioritize it
-    if (orderA !== undefined) return -1;
-    if (orderB !== undefined) return 1;
-    
-    // Otherwise maintain original order
-    return 0;
+  const categoryById = new Map(categories.map((category) => [category.id, category]));
+  const hiddenCategoryIds = new Set(coerceNumberArray(homeLayout?.hiddenCategoryIds));
+
+  const toggleCategoriesFromStore = [...categories].sort((a, b) => {
+    const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
+    const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return (a.displayName || '').localeCompare(b.displayName || '');
   });
-  
-  // Sort categories by displayOrder from API, or fallback to predefined order
-  // Check if any categories have displayOrder (API-driven) vs using hardcoded list
-  const hasDisplayOrderFromApi = categories.some(c => c.displayOrder !== undefined);
-  
-  // Filter and sort categories to show (based on API displayOrder or default list)
-  const categoriesToShow = categories
-    .filter((category) => {
-      // If API provides displayOrder, show all categories with displayOrder
-      // Otherwise, fallback to hardcoded default list
-      if (hasDisplayOrderFromApi) {
-        return category.displayOrder !== undefined;
-      }
-      
-      // Fallback: Match by category code or displayName
-      const codeMatch = DEFAULT_CATEGORY_CODES.some(
-        code => category.code.toUpperCase() === code.toUpperCase()
-      );
-      const nameMatch = DEFAULT_CATEGORY_NAMES.some(
-        name => category.displayName.toLowerCase().includes(name.toLowerCase()) ||
-                name.toLowerCase().includes(category.displayName.toLowerCase())
-      );
-      return codeMatch || nameMatch;
-    })
-    .sort((a, b) => {
-      // Prefer displayOrder from API if available
-      const orderA = a.displayOrder;
-      const orderB = b.displayOrder;
-      
-      if (orderA !== undefined && orderB !== undefined) {
-        return orderA - orderB;
-      }
-      
-      // If only one has displayOrder, prioritize it
-      if (orderA !== undefined) return -1;
-      if (orderB !== undefined) return 1;
-      
-      // Fallback to hardcoded order - check both code and displayName
-      const getCategoryIndex = (category: Category): number => {
-        // First try to match by code
-        const codeIndex = DEFAULT_CATEGORY_CODES.findIndex(
-          code => category.code.toUpperCase() === code.toUpperCase()
-        );
-        if (codeIndex !== -1) return codeIndex;
-        
-        // Then try to match by displayName
-        const nameIndex = DEFAULT_CATEGORY_NAMES.findIndex(
-          name => category.displayName.toLowerCase().includes(name.toLowerCase()) ||
-                  name.toLowerCase().includes(category.displayName.toLowerCase())
-        );
-        if (nameIndex !== -1) {
-          // Map name index to code index (they should align)
-          // DAIRY_EGGS=0, SNACKS_CHIPS=1, BEV_SODA=2
-          if (nameIndex < 2) return 0; // Dairy
-          if (nameIndex === 2) return 1; // Snacks
-          if (nameIndex === 3) return 2; // Beverages
-        }
-        return -1;
+
+  const enabledSections = (homeLayout?.sections || []).filter((section) => section.enabled !== false);
+  const heroEnabled = homeLayout
+    ? enabledSections.some((section) => section.type === 'hero')
+    : true;
+
+  const configuredCategoryEntries: HomeCategoryEntry[] = enabledSections
+    .filter((section) => section.type === 'category')
+    .map((section) => {
+      const sectionCategoryId = coerceNumber(section.categoryId);
+      if (sectionCategoryId === null) return null;
+      if (hiddenCategoryIds.has(sectionCategoryId)) return null;
+      const category = categoryById.get(sectionCategoryId) ??
+        buildSyntheticCategory(sectionCategoryId, section.title);
+      return {
+        category,
+        sectionTitle: sanitizeCategoryTitle(section.title?.trim() || category.displayName),
       };
-      
-      const indexA = getCategoryIndex(a);
-      const indexB = getCategoryIndex(b);
-      
-      // If not found in order, put at end
-      if (indexA === -1) return 1;
-      if (indexB === -1) return -1;
-      return indexA - indexB;
-    });
-  
-  // Map categories to their products (categories without products will have empty arrays)
-  const sortedCategoryEntries = categoriesToShow.map((category) => {
-    return {
-      category,
-      categoryCode: category.code,
-      categoryProducts: categoryProducts[category.id] || [],
-    };
-  });
+    })
+    .filter((entry): entry is HomeCategoryEntry => entry !== null);
+
+  const homeCategoryEntries = homeLayout ? configuredCategoryEntries : [];
   
   
   const openCategoryProducts = useCallback((category: Category) => {
@@ -940,9 +1012,10 @@ export default function HomeScreen() {
       params: {
         displayName: category.displayName,
         code: category.code,
+        storeId: resolvedStoreId?.toString(),
       },
     });
-  }, [router]);
+  }, [resolvedStoreId, router]);
 
   const handleCategoryPress = (categoryId: number) => {
     const category = categories.find((item) => item.id === categoryId);
@@ -1170,7 +1243,7 @@ export default function HomeScreen() {
                   </View>
                 ) : isCategoriesExpanded ? (
                   <View style={styles.categoriesGridContainer}>
-                    {sortedCategories.length > 0 && sortedCategories.map((category) => (
+                    {toggleCategoriesFromStore.length > 0 && toggleCategoriesFromStore.map((category) => (
                       <CategoryCard
                         key={category.id}
                         category={category}
@@ -1292,18 +1365,22 @@ export default function HomeScreen() {
           ) : (
             // Show all product sections when no category is selected
             <>
-              <HeroSection />
-              {sortedCategoryEntries.length > 0 ? (
-                sortedCategoryEntries.map(({ category, categoryCode, categoryProducts }) => {
-                  if (!category) return null;
-                  // Show category section even if empty (for debugging - can filter later)
-                  const visual = getCategoryVisual(category);
+              {heroEnabled ? <HeroSection /> : null}
+              {homeLayoutError ? (
+                <View style={styles.layoutNoticeContainer}>
+                  <ThemedText style={styles.layoutNoticeText}>
+                    {`Using default home layout (${homeLayoutError})`}
+                  </ThemedText>
+                </View>
+              ) : null}
+              {homeCategoryEntries.length > 0 ? (
+                homeCategoryEntries.map(({ category, sectionTitle }, index) => {
+                  const productsForCategory = categoryProducts[category.id] || [];
                   return (
                     <ProductSection
-                      key={categoryCode}
-                      title={category.displayName}
-                      products={categoryProducts}
-                      iconUri={visual.iconUri}
+                      key={`${category.id}-${sectionTitle}-${index}`}
+                      title={sectionTitle}
+                      products={productsForCategory}
                       onProductPress={openProductModal}
                     />
                   );
@@ -1311,7 +1388,11 @@ export default function HomeScreen() {
               ) : (
                 <View style={styles.emptyState}>
                   <ThemedText style={styles.emptyStateText}>
-                    No categories found. Please check your API connection.
+                    {homeLayout
+                      ? 'No category sections configured in home layout.'
+                      : homeLayoutError
+                        ? 'Failed to load home layout.'
+                        : 'Loading home layout...'}
                   </ThemedText>
                 </View>
               )}
@@ -1859,6 +1940,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#999',
     textAlign: 'center',
+  },
+  layoutNoticeContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  layoutNoticeText: {
+    fontSize: 12,
+    color: '#667085',
   },
   section: {
     marginBottom: 24,
