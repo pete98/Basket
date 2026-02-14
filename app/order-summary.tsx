@@ -466,7 +466,7 @@ export default function OrderSummaryScreen() {
       });
 
       clearCart();
-      router.replace('/orders');
+      router.replace('/deals');
     } catch (error) {
       setPlaceOrderError(error instanceof Error ? error.message : 'Unable to place order.');
     } finally {

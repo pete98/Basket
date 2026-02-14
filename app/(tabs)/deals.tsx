@@ -54,7 +54,7 @@ function formatOrderStatus(status: string): string {
   return status.replace(/_/g, ' ').toLowerCase();
 }
 
-export default function OrdersScreen() {
+export default function DealsScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, openLogin } = useAuthGuard();
   const { selectedLocation } = useLocation();
@@ -113,7 +113,7 @@ export default function OrdersScreen() {
     }
     if (!storeId) {
       setOrders([]);
-      setLoadError('Select a store to view orders.');
+      setLoadError('Select a store to view deals.');
       setIsLoading(false);
       return;
     }
@@ -130,7 +130,7 @@ export default function OrdersScreen() {
       .catch((error) => {
         if (!isActive) return;
         setOrders([]);
-        setLoadError(error instanceof Error ? error.message : 'Unable to load orders.');
+        setLoadError(error instanceof Error ? error.message : 'Unable to load deals.');
       })
       .finally(() => {
         if (!isActive) return;
@@ -148,19 +148,19 @@ export default function OrdersScreen() {
         <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
           <View style={styles.pageHeaderContent}>
             <View>
-              <Text style={styles.pageHeaderTitle}>Orders</Text>
-              <Text style={styles.pageHeaderSubtitle}>Log in to view history</Text>
+              <Text style={styles.pageHeaderTitle}>Deals</Text>
+              <Text style={styles.pageHeaderSubtitle}>Log in to view offers</Text>
             </View>
           </View>
         </View>
         <View style={styles.gateCard}>
-          <Text style={styles.gateTitle}>Your orders live here</Text>
+          <Text style={styles.gateTitle}>Your deals live here</Text>
           <Text style={styles.gateSubtitle}>
-            Log in to track deliveries, reorder favorites, and view receipts.
+            Log in to browse store-specific deals and active offers.
           </Text>
           <Pressable
             style={styles.gateButton}
-            onPress={() => openLogin({ pathname: '/orders' })}
+            onPress={() => openLogin({ pathname: '/deals' })}
           >
             <Text style={styles.gateButtonText}>Log in</Text>
           </Pressable>
@@ -174,9 +174,9 @@ export default function OrdersScreen() {
       <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
         <View style={styles.pageHeaderContent}>
           <View>
-            <Text style={styles.pageHeaderTitle}>Orders</Text>
+            <Text style={styles.pageHeaderTitle}>Deals</Text>
             <Text style={styles.pageHeaderSubtitle}>
-              {isLoading ? 'Loading orders...' : 'Track your pickup history'}
+              {isLoading ? 'Loading deals...' : 'Store-specific offers'}
             </Text>
           </View>
         </View>
@@ -185,7 +185,7 @@ export default function OrdersScreen() {
         {isLoading && <ActivityIndicator size="small" color="#111827" />}
         {!isLoading && loadError && <Text style={styles.helperText}>{loadError}</Text>}
         {!isLoading && !loadError && orders.length === 0 && (
-          <Text style={styles.helperText}>No orders yet</Text>
+          <Text style={styles.helperText}>No deals yet</Text>
         )}
         {!isLoading && orders.length > 0 && (
           <FlatList

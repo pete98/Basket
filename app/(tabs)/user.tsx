@@ -224,42 +224,30 @@ export default function UserProfile() {
           )}
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Authentication</Text>
-          {!isLoggedIn && (
+        {!isLoggedIn && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Authentication</Text>
             <Text style={styles.authHint}>
               Log in to manage your account settings and saved info.
             </Text>
-          )}
-          <Pressable
-            style={({ pressed }) => [
-              styles.authButton,
-              isLoggedIn && styles.authButtonSecondary,
-              pressed && styles.rowPressed,
-            ]}
-            onPress={
-              configReady ? (isLoggedIn ? handleLogout : handleLogin) : undefined
-            }
-            disabled={!configReady || isLoading || isProcessing}
-          >
-            {isProcessing ? (
-              <ActivityIndicator
-                size="small"
-                color={isLoggedIn ? '#1C1C1E' : '#fff'}
-              />
-            ) : (
-              <Text
-                style={[
-                  styles.authButtonText,
-                  isLoggedIn && styles.authButtonTextSecondary,
-                  !configReady && styles.authButtonTextSecondary,
-                ]}
-              >
-                {configReady ? (isLoggedIn ? 'Log out' : 'Log in') : 'Configure Auth0'}
-              </Text>
-            )}
-          </Pressable>
-        </View>
+            <Pressable
+              style={({ pressed }) => [
+                styles.authButton,
+                pressed && styles.rowPressed,
+              ]}
+              onPress={configReady ? handleLogin : undefined}
+              disabled={!configReady || isLoading || isProcessing}
+            >
+              {isProcessing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.authButtonText}>
+                  {configReady ? 'Log in' : 'Configure Auth0'}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        )}
 
         {isLoggedIn && (
           <View style={styles.section}>
@@ -366,6 +354,30 @@ export default function UserProfile() {
               <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
             </Pressable>
           ))}
+          {isLoggedIn && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.rowCard,
+                styles.rowSpacing,
+                styles.logoutRow,
+                pressed && styles.rowPressed,
+              ]}
+              onPress={configReady ? handleLogout : undefined}
+              disabled={!configReady || isLoading || isProcessing}
+            >
+              <View style={[styles.iconBadge, styles.logoutIconBadge]}>
+                {isProcessing ? (
+                  <ActivityIndicator size="small" color="#DC2626" />
+                ) : (
+                  <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+                )}
+              </View>
+              <View style={styles.rowContent}>
+                <Text style={styles.logoutTitle}>Log Out</Text>
+                <Text style={styles.logoutSubtitle}>Sign out from your account</Text>
+              </View>
+            </Pressable>
+          )}
         </View>
     </ScrollView>
     </View>
@@ -480,18 +492,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  authButtonSecondary: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#1C1C1E',
-  },
   authButtonText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#fff',
-  },
-  authButtonTextSecondary: {
-    color: '#1C1C1E',
   },
   rowCard: {
     flexDirection: 'row',
@@ -514,6 +518,22 @@ const styles = StyleSheet.create({
   },
   rowContent: {
     flex: 1,
+  },
+  logoutRow: {
+    paddingHorizontal: 0,
+  },
+  logoutIconBadge: {
+    backgroundColor: '#FFF1F1',
+  },
+  logoutTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F1F24',
+  },
+  logoutSubtitle: {
+    fontSize: 13,
+    color: '#8E90A6',
+    marginTop: 2,
   },
   rowTitle: {
     fontSize: 15,

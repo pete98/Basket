@@ -4,6 +4,12 @@ import React from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const TAB_COUNT = 4;
+const CART_TAB_INDEX = 2; // Home, Deals, Cart, User
+const CART_TAB_CENTER_X = (SCREEN_WIDTH / TAB_COUNT) * (CART_TAB_INDEX + 0.5);
+const TAB_ICON_SIZE = 24;
+const CART_BADGE_SIZE = 20;
+const CART_BADGE_BOTTOM = 58;
 
 
 export default function TabLayout() {
@@ -26,6 +32,11 @@ export default function TabLayout() {
       <Icon sf={"house.fill"} drawable='home' />
     </NativeTabs.Trigger>
 
+    <NativeTabs.Trigger name="deals">
+      <Label>Deals</Label>
+      <Icon sf={"tag.fill"} drawable='local-offer' />
+    </NativeTabs.Trigger>
+
     <NativeTabs.Trigger name="cart">
       <Label>Cart</Label>
       <Icon sf={"cart.fill"} drawable='shopping-cart' />
@@ -34,11 +45,6 @@ export default function TabLayout() {
     <NativeTabs.Trigger name="user">
       <Label>User</Label>
       <Icon sf={"person.fill"} drawable='person' />
-    </NativeTabs.Trigger>
-
-    <NativeTabs.Trigger name="orders">
-      <Label>Orders</Label>
-      <Icon sf={"bag.fill"} drawable='bag' />
     </NativeTabs.Trigger>
 
       </NativeTabs>
@@ -61,8 +67,8 @@ const styles = StyleSheet.create({
   },
   cartBadgeOverlay: {
     position: 'absolute',
-    bottom: 50,
-    left: SCREEN_WIDTH * 0.5 - 20,
+    bottom: CART_BADGE_BOTTOM,
+    left: CART_TAB_CENTER_X + TAB_ICON_SIZE / 2 - CART_BADGE_SIZE / 2,
     zIndex: 1000,
   },
   cartBadge: {
@@ -75,7 +81,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 5,
     borderWidth: 2,
     borderColor: '#0f172a',
-    transform: [{ translateX: 0 }, { translateY: -10 }],
   },
   cartBadgeText: {
     color: '#fff',
