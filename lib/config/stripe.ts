@@ -26,8 +26,9 @@ function buildPaymentSheetUrl(baseUrl: string, path: string): string {
   return `${baseUrl}${path}`;
 }
 
-const paymentsServiceBaseUrl = extra.paymentsServiceBaseUrl ?? '';
-const paymentIntentPath = extra.paymentSheetPath ?? '/payments/intents';
+const paymentsServiceBaseUrl =
+  process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL || 'https://major-pots-press.loca.lt';
+const paymentIntentPath = process.env.EXPO_PUBLIC_STRIPE_PAYMENT_SHEET_PATH || '/payments/intents';
 
 export const stripeConfig = {
   publishableKey: resolveStripeValue(extra.stripePublishableKey, 'Stripe publishable key'),

@@ -21,11 +21,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const orderServiceBaseUrl =
     process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL ||
     process.env.ORDER_SERVICE_BASE_URL ||
-    'https://23s9vttxmvif.share.zrok.io';
+    'https://thick-ducks-double.loca.lt';
   const paymentsServiceBaseUrl =
     process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL ||
     process.env.PAYMENTS_BASE_URL ||
-    'https://44bovkfeff77.share.zrok.io';
+    'https://major-pots-press.loca.lt';
   const stripePublishableKey =
     process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
     process.env.STRIPE_PUBLISHABLE_KEY ||

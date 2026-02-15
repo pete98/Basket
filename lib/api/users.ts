@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { ApiClientError } from './client';
+import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 
 interface UserApiExtra {
   userServiceBaseUrl?: string;
@@ -58,6 +59,7 @@ function hasExpectedAudience(token: string): boolean {
 
 async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
   const url = `${USER_API_BASE_URL}${endpoint}`;
+  const method = options.method ?? 'GET';
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
@@ -74,30 +76,50 @@ async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
     }
   }
 
-  if (__DEV__) {
-    console.log(`[user-service] ${options.method || 'GET'} ${url}`);
-  }
-
-  const response = await fetch(url, { ...options, headers });
-  if (!response.ok) {
-    const defaultMessage = `API request failed with status ${response.status} (${url})`;
-    let message = defaultMessage;
-    try {
-      const errorData = await response.json();
-      const serverMessage = errorData.error?.message || errorData.message;
-      if (serverMessage) {
-        message = `${serverMessage} (${url})`;
-      }
-    } catch {
-      // ignore parse errors
-    }
-    throw new ApiClientError(message, response.status);
-  }
+  const requestStartedAt = logApiRequest({
+    method,
+    url,
+    headers,
+    body: options.body,
+  });
 
   try {
-    return (await response.json()) as T;
-  } catch {
-    throw new ApiClientError('Failed to parse API response', response.status);
+    const response = await fetch(url, { ...options, headers });
+    logApiResponse({
+      method,
+      url,
+      status: response.status,
+      durationMs: Date.now() - requestStartedAt,
+    });
+
+    if (!response.ok) {
+      const defaultMessage = `API request failed with status ${response.status} (${url})`;
+      let message = defaultMessage;
+      try {
+        const errorData = await response.json();
+        const serverMessage = errorData.error?.message || errorData.message;
+        if (serverMessage) {
+          message = `${serverMessage} (${url})`;
+        }
+      } catch {
+        // ignore parse errors
+      }
+      throw new ApiClientError(message, response.status);
+    }
+
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new ApiClientError('Failed to parse API response', response.status);
+    }
+  } catch (error) {
+    logApiError({
+      method,
+      url,
+      durationMs: Date.now() - requestStartedAt,
+      error,
+    });
+    throw error;
   }
 }
 

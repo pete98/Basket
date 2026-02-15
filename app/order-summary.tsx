@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useStripe } from '@stripe/stripe-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useAuth0 } from 'react-native-auth0';
@@ -110,9 +110,32 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+interface PickupWindowRange {
+  start: string;
+  end: string;
+}
+
 function buildStripeReturnUrl(urlScheme: string): string | null {
   if (!urlScheme) return null;
   return `${urlScheme}://stripe-redirect`;
+}
+
+function buildResolvedPickupWindow(
+  pickupWindowStart?: string,
+  pickupWindowEnd?: string
+): PickupWindowRange {
+  if (pickupWindowStart && pickupWindowEnd) {
+    return { start: pickupWindowStart, end: pickupWindowEnd };
+  }
+
+  const now = new Date();
+  const fallbackStart = new Date(now.getTime() + 5 * 60 * 1000);
+  const fallbackEnd = new Date(fallbackStart.getTime() + 15 * 60 * 1000);
+
+  return {
+    start: pickupWindowStart || fallbackStart.toISOString(),
+    end: pickupWindowEnd || fallbackEnd.toISOString(),
+  };
 }
 
 function resolvePaymentIntentId(
@@ -171,8 +194,10 @@ export default function OrderSummaryScreen() {
   const timeSlotTz = params.timeSlotTz as string;
   const pickupWindowStart = params.pickupWindowStart as string;
   const pickupWindowEnd = params.pickupWindowEnd as string;
-  const deliveryFeeParam = params.deliveryFee as string;
-  
+  const resolvedPickupWindow = useMemo(
+    () => buildResolvedPickupWindow(pickupWindowStart, pickupWindowEnd),
+    [pickupWindowStart, pickupWindowEnd]
+  );
   // Format delivery date
   function getDeliveryDate() {
     if (selectedDate === 'today') return 'Today';
@@ -212,15 +237,9 @@ export default function OrderSummaryScreen() {
   const instructionVisual = DETAIL_VISUALS.instruction;
 
   // Calculate totals
-  const deliveryFee = isPickup
-    ? 0
-    : deliveryFeeParam
-    ? parseFloat(deliveryFeeParam)
-    : 6.95;
-  const feeLabel = isPickup ? 'Pickup Fee' : 'Delivery Fee';
-  const subtotal = draftOrder?.subtotal ?? total;
-  const tax = draftOrder?.tax ?? 0;
-  const estimatedTotal = draftOrder?.total ?? subtotal + deliveryFee + tax;
+  const subtotal = total;
+  const serviceCharge = subtotal * 0.07 + 0.3;
+  const estimatedTotal = subtotal + serviceCharge;
   const placeOrderDisabled =
     isPlacingOrder ||
     items.length === 0 ||
@@ -328,9 +347,9 @@ export default function OrderSummaryScreen() {
       userId,
       storeId,
       items: orderItems,
+      pickupWindowStart: resolvedPickupWindow.start,
+      pickupWindowEnd: resolvedPickupWindow.end,
     };
-    if (pickupWindowStart) payload.pickupWindowStart = pickupWindowStart;
-    if (pickupWindowEnd) payload.pickupWindowEnd = pickupWindowEnd;
     if (params.notes) payload.notes = params.notes as string;
 
     createOrder({ payload })
@@ -350,7 +369,18 @@ export default function OrderSummaryScreen() {
     return () => {
       isActive = false;
     };
-  }, [isPickup, items, orderItemKey, params.notes, pickupWindowEnd, pickupWindowStart, storeId, userProfile]);
+  }, [
+    isPickup,
+    items,
+    orderItemKey,
+    params.notes,
+    pickupWindowEnd,
+    pickupWindowStart,
+    resolvedPickupWindow.end,
+    resolvedPickupWindow.start,
+    storeId,
+    userProfile,
+  ]);
 
   const handlePlaceOrder = async () => {
     if (!ensureAuthenticated()) return;
@@ -412,9 +442,9 @@ export default function OrderSummaryScreen() {
         userId,
         storeId,
         items: orderItems,
+        pickupWindowStart: resolvedPickupWindow.start,
+        pickupWindowEnd: resolvedPickupWindow.end,
       };
-      if (pickupWindowStart) payload.pickupWindowStart = pickupWindowStart;
-      if (pickupWindowEnd) payload.pickupWindowEnd = pickupWindowEnd;
       if (params.notes) payload.notes = params.notes as string;
 
       const order = draftOrder ?? (await createOrder({ payload }));
@@ -422,6 +452,8 @@ export default function OrderSummaryScreen() {
         payload: {
           orderId: order.orderId,
         },
+        accessToken,
+        storeId,
       });
 
       const { error: initError } = await initPaymentSheet({
@@ -632,13 +664,8 @@ export default function OrderSummaryScreen() {
           </View>
           
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>{feeLabel}</Text>
-            <Text style={styles.summaryValue}>{formatCurrency(deliveryFee)}</Text>
-          </View>
-          
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Tax</Text>
-            <Text style={styles.summaryValue}>{formatCurrency(tax)}</Text>
+            <Text style={styles.summaryLabel}>Service Charge</Text>
+            <Text style={styles.summaryValue}>{formatCurrency(serviceCharge)}</Text>
           </View>
         </View>
 

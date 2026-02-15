@@ -1,6 +1,5 @@
-import Constants from 'expo-constants';
-
 import { ApiClientError } from './client';
+import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 import {
   CancelOrderRequest,
   CompletePickupRequest,
@@ -14,14 +13,34 @@ import {
 } from '../types/orders';
 
 const ORDER_API_BASE_URL =
-  Constants.expoConfig?.extra?.orderServiceBaseUrl ?? 'https://21wdkmqssqbo.share.zrok.io';
+  process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL || 'https://thick-ducks-double.loca.lt';
 
 function getOrderApiUrl(endpoint: string): string {
   return `${ORDER_API_BASE_URL}${endpoint}`;
 }
 
+function formatOrderApiErrorMessage(status: number, rawBody: string): string {
+  const defaultMessage = `API request failed with status ${status}`;
+  if (!rawBody) return defaultMessage;
+
+  try {
+    const errorData = JSON.parse(rawBody) as {
+      error?: { message?: string };
+      message?: string;
+      details?: unknown;
+    };
+    const apiMessage = errorData.error?.message || errorData.message;
+    if (!apiMessage) return `${defaultMessage}: ${rawBody}`;
+    if (!errorData.details) return apiMessage;
+    return `${apiMessage} (${JSON.stringify(errorData.details)})`;
+  } catch {
+    return `${defaultMessage}: ${rawBody}`;
+  }
+}
+
 async function orderApiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = getOrderApiUrl(endpoint);
+  const method = options.method ?? 'GET';
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true',
@@ -35,16 +54,24 @@ async function orderApiRequest<T>(endpoint: string, options: RequestInit = {}): 
     },
   };
 
+  const requestStartedAt = logApiRequest({
+    method,
+    url,
+    headers: config.headers,
+    body: config.body,
+  });
+
   try {
     const response = await fetch(url, config);
+    logApiResponse({
+      method,
+      url,
+      status: response.status,
+      durationMs: Date.now() - requestStartedAt,
+    });
     if (!response.ok) {
-      let message = `API request failed with status ${response.status}`;
-      try {
-        const errorData = await response.json();
-        message = errorData.error?.message || errorData.message || message;
-      } catch {
-        // ignore parse errors
-      }
+      const rawErrorBody = await response.text();
+      const message = formatOrderApiErrorMessage(response.status, rawErrorBody);
       throw new ApiClientError(message, response.status);
     }
 
@@ -54,6 +81,12 @@ async function orderApiRequest<T>(endpoint: string, options: RequestInit = {}): 
       throw new ApiClientError('Failed to parse API response', response.status);
     }
   } catch (error) {
+    logApiError({
+      method,
+      url,
+      durationMs: Date.now() - requestStartedAt,
+      error,
+    });
     if (error instanceof Error && error.name === 'AbortError') throw error;
     if (error instanceof ApiClientError) throw error;
     if (error instanceof TypeError && error.message === 'Network request failed') {

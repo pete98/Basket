@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 
 interface InventoryApiExtra {
   inventoryServiceBaseUrl?: string;
@@ -56,6 +57,7 @@ export async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  const method = options.method ?? 'GET';
   
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
@@ -70,10 +72,30 @@ export async function apiRequest<T>(
     },
   };
 
+  const requestStartedAt = logApiRequest({
+    method,
+    url,
+    headers: config.headers,
+    body: config.body,
+  });
+
   try {
     const response = await fetch(url, config);
+    logApiResponse({
+      method,
+      url,
+      status: response.status,
+      durationMs: Date.now() - requestStartedAt,
+    });
     return handleResponse<T>(response);
   } catch (error) {
+    logApiError({
+      method,
+      url,
+      durationMs: Date.now() - requestStartedAt,
+      error,
+    });
+
     // Re-throw abort errors as-is
     if (error instanceof Error && error.name === 'AbortError') {
       throw error;
