@@ -57,6 +57,7 @@ export default function RootLayout() {
                         }}
                       />
                       <Stack.Screen name="order-summary" options={{ headerShown: false }} />
+                      <Stack.Screen name="order-history" options={{ headerShown: false }} />
                     </Stack>
                     <StatusBar style="dark" translucent backgroundColor="transparent" />
                   </ThemeProvider>

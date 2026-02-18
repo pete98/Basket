@@ -8,10 +8,7 @@ interface UserApiExtra {
 }
 
 const extra = (Constants.expoConfig?.extra ?? {}) as UserApiExtra;
-const USER_API_BASE_URL =
-  extra.userServiceBaseUrl ||
-  process.env.EXPO_PUBLIC_USER_SERVICE_BASE_URL ||
-  'https://3snjivztz81a.share.zrok.io';
+const USER_API_BASE_URL = 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 const EXPECTED_AUTH0_AUDIENCE =
   extra.auth0Audience || process.env.EXPO_PUBLIC_AUTH0_AUDIENCE || '';
 
@@ -57,6 +54,11 @@ function hasExpectedAudience(token: string): boolean {
   return false;
 }
 
+function maskToken(token: string): string {
+  if (token.length <= 18) return `${token.slice(0, 6)}...`;
+  return `${token.slice(0, 12)}...${token.slice(-6)}`;
+}
+
 async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
   const url = `${USER_API_BASE_URL}${endpoint}`;
   const method = options.method ?? 'GET';
@@ -68,6 +70,9 @@ async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
   const authorizationHeader = readAuthorizationHeader(headers);
   if (authorizationHeader?.startsWith('Bearer ')) {
     const bearerToken = authorizationHeader.replace('Bearer ', '').trim();
+    if (__DEV__ && bearerToken) {
+      console.log('[auth] bearer token (masked):', maskToken(bearerToken));
+    }
     if (bearerToken && !hasExpectedAudience(bearerToken)) {
       throw new ApiClientError(
         `Bearer token audience mismatch for user service (${url}). Expected audience: ${EXPECTED_AUTH0_AUDIENCE}`,

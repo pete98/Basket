@@ -86,6 +86,11 @@ export default function LoginScreen() {
       console.log('Auth0 credentials keys:', Object.keys(authResult ?? {}));
       const accessToken = authResult?.accessToken;
       if (accessToken) {
+        console.log('Received access token:', {
+          received: true,
+          length: accessToken.length,
+          preview: `${accessToken.slice(0, 12)}...${accessToken.slice(-6)}`,
+        });
         await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
         const tokenParts = accessToken.split('.');
         const tokenPreview = `${accessToken.slice(0, 18)}...${accessToken.slice(-10)}`;

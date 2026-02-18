@@ -21,11 +21,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const orderServiceBaseUrl =
     process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL ||
     process.env.ORDER_SERVICE_BASE_URL ||
-    'https://thick-ducks-double.loca.lt';
+    'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
   const paymentsServiceBaseUrl =
     process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL ||
     process.env.PAYMENTS_BASE_URL ||
-    'https://major-pots-press.loca.lt';
+    'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
   const stripePublishableKey =
     process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ||
     process.env.STRIPE_PUBLISHABLE_KEY ||
@@ -41,11 +41,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const inventoryServiceBaseUrl =
     process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
     process.env.INVENTORY_BASE_URL ||
-    'https://cd7ba7c78881.ngrok-free.app';
+    'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
   const userServiceBaseUrl =
     process.env.EXPO_PUBLIC_USER_SERVICE_BASE_URL ||
     process.env.USER_SERVICE_BASE_URL ||
-    'https://3snjivztz81a.share.zrok.io';
+    'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 
   return {
     ...config,

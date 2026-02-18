@@ -1,57 +1,127 @@
 import { useLocation } from '@/contexts/location-context';
-import { getStoreOrders } from '@/lib/api/orders';
-import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
-import { type StoreOrderSummary } from '@/lib/types/orders';
+import { ProductCard } from '@/components/product-card';
+import { ThemedText } from '@/components/themed-text';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
+import { getDealsSections } from '@/lib/api/promotions';
+import type { UIProduct } from '@/lib/types/ui';
+import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
+import type {
+  DealSection,
+  DealSectionProductSnapshot,
+  DealsSectionsResponse,
+} from '@/lib/types/promotions';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Dimensions,
+  FlatList,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useAuth0 } from 'react-native-auth0';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 20) / 2.9;
 
 function parseStoreId(locationId: string): number | null {
   if (!locationId.startsWith('store-')) return null;
   const rawId = locationId.replace('store-', '');
-  const storeId = Number.parseInt(rawId, 10);
-  if (Number.isNaN(storeId)) return null;
-  return storeId;
+  const parsedStoreId = Number.parseInt(rawId, 10);
+  if (Number.isNaN(parsedStoreId)) return null;
+  return parsedStoreId;
 }
 
 function getActiveStoreId(activeStore: unknown): number | null {
   if (!activeStore || typeof activeStore !== 'object') return null;
-  const store = activeStore as { storeId?: number; id?: number };
+  const store = activeStore as { storeId?: number | string; id?: number | string };
   if (typeof store.storeId === 'number') return store.storeId;
+  if (typeof store.storeId === 'string') {
+    const parsedStoreId = Number.parseInt(store.storeId, 10);
+    if (!Number.isNaN(parsedStoreId)) return parsedStoreId;
+  }
   if (typeof store.id === 'number') return store.id;
+  if (typeof store.id === 'string') {
+    const parsedId = Number.parseInt(store.id, 10);
+    if (!Number.isNaN(parsedId)) return parsedId;
+  }
   return null;
 }
 
-function formatPickupWindow(start: string, end: string): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf())) {
-    return `${start} - ${end}`;
-  }
-
-  const dateLabel = startDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-  const startTime = startDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  const endTime = endDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-
-  return `${dateLabel} · ${startTime} - ${endTime}`;
+function toUIProduct(product: DealSectionProductSnapshot, section: DealSection): UIProduct {
+  const promoPrice =
+    typeof product.promoPrice === 'number' && Number.isFinite(product.promoPrice)
+      ? product.promoPrice
+      : typeof product.originalPrice === 'number' && Number.isFinite(product.originalPrice)
+        ? product.originalPrice
+        : 0;
+  return {
+    id: String(product.productId),
+    name: product.name,
+    price: promoPrice,
+    originalPrice:
+      typeof product.originalPrice === 'number' && Number.isFinite(product.originalPrice)
+        ? product.originalPrice
+        : undefined,
+    image: product.imageUrl || '',
+    category: product.category || section.title,
+    inStock: true,
+    brand: product.brand || undefined,
+  };
 }
 
-function formatOrderStatus(status: string): string {
-  return status.replace(/_/g, ' ').toLowerCase();
+function DealSectionCard({ section }: { section: DealSection }) {
+  const products = section.products.map((product) => ({
+    snapshot: product,
+    uiProduct: toUIProduct(product, section),
+  }));
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <ThemedText type="subtitle" style={styles.sectionTitle}>
+            {section.title}
+          </ThemedText>
+          {!!section.badgeText && <Text style={styles.sectionBadge}>{section.badgeText}</Text>}
+        </View>
+      </View>
+      {!!section.subtitle && <Text style={styles.sectionDescription}>{section.subtitle}</Text>}
+
+      {products.length === 0 ? (
+        <Text style={styles.emptyProductsText}>No product snapshots returned.</Text>
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.productList}
+        >
+          {products.map((item, index) => (
+            <View
+              key={`${section.promotionId}-${item.snapshot.productId}-${index}`}
+              style={styles.productCardWrapper}
+            >
+              <ProductCard product={item.uiProduct} showPrice={false} showBorder={false} />
+              <View style={styles.dealPriceRow}>
+                <Text style={styles.dealPromoPrice}>${item.uiProduct.price.toFixed(2)}</Text>
+                {typeof item.snapshot.originalPrice === 'number' && (
+                  <Text style={styles.dealOriginalPrice}>${item.snapshot.originalPrice.toFixed(2)}</Text>
+                )}
+              </View>
+              {!!item.snapshot.discountLabel && (
+                <Text style={styles.dealDiscountLabel}>{item.snapshot.discountLabel}</Text>
+              )}
+            </View>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
 }
 
 export default function DealsScreen() {
@@ -59,11 +129,21 @@ export default function DealsScreen() {
   const { isLoggedIn, openLogin } = useAuthGuard();
   const { selectedLocation } = useLocation();
   const { getCredentials } = useAuth0();
-  const [orders, setOrders] = useState<StoreOrderSummary[]>([]);
+
+  const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
+  const [dealsLayout, setDealsLayout] = useState<DealsSectionsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
-  const storeId = activeStoreId ?? parseStoreId(selectedLocation.id);
+
+  const resolvedStoreId = useMemo(
+    () => activeStoreId ?? parseStoreId(selectedLocation.id),
+    [activeStoreId, selectedLocation.id]
+  );
+
+  const orderedSections = useMemo(() => {
+    if (!dealsLayout) return [];
+    return dealsLayout.sections;
+  }, [dealsLayout]);
 
   async function getAccessToken() {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -81,6 +161,7 @@ export default function DealsScreen() {
     }
 
     let isActive = true;
+
     getAccessToken()
       .then(async (accessToken) => {
         if (!accessToken) return null;
@@ -106,30 +187,37 @@ export default function DealsScreen() {
 
   useEffect(() => {
     if (!isLoggedIn) {
-      setOrders([]);
+      setDealsLayout(null);
       setLoadError(null);
       setIsLoading(false);
       return;
     }
-    if (!storeId) {
-      setOrders([]);
-      setLoadError('Select a store to view deals.');
+
+    if (!resolvedStoreId) {
+      setDealsLayout(null);
       setIsLoading(false);
+      setLoadError('Select a store to load deals.');
       return;
     }
 
     let isActive = true;
+    const controller = new AbortController();
+
     setIsLoading(true);
     setLoadError(null);
 
-    getStoreOrders({ storeId })
-      .then((data) => {
+    getDealsSections({
+      storeId: resolvedStoreId,
+      signal: controller.signal,
+    })
+      .then((response) => {
         if (!isActive) return;
-        setOrders(data);
+        setDealsLayout(response);
       })
       .catch((error) => {
         if (!isActive) return;
-        setOrders([]);
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setDealsLayout(null);
         setLoadError(error instanceof Error ? error.message : 'Unable to load deals.');
       })
       .finally(() => {
@@ -139,13 +227,14 @@ export default function DealsScreen() {
 
     return () => {
       isActive = false;
+      controller.abort();
     };
-  }, [isLoggedIn, storeId]);
+  }, [isLoggedIn, resolvedStoreId]);
 
   if (!isLoggedIn) {
     return (
       <View style={styles.container}>
-        <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
+        <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}> 
           <View style={styles.pageHeaderContent}>
             <View>
               <Text style={styles.pageHeaderTitle}>Deals</Text>
@@ -153,16 +242,11 @@ export default function DealsScreen() {
             </View>
           </View>
         </View>
-        <View style={styles.gateCard}>
-          <Text style={styles.gateTitle}>Your deals live here</Text>
-          <Text style={styles.gateSubtitle}>
-            Log in to browse store-specific deals and active offers.
-          </Text>
-          <Pressable
-            style={styles.gateButton}
-            onPress={() => openLogin({ pathname: '/deals' })}
-          >
-            <Text style={styles.gateButtonText}>Log in</Text>
+        <View style={styles.infoCard}>
+          <Text style={styles.infoTitle}>Your deals live here</Text>
+          <Text style={styles.infoSubtitle}>Log in to browse store-specific deals and active offers.</Text>
+          <Pressable style={styles.primaryButton} onPress={() => openLogin({ pathname: '/deals' })}>
+            <Text style={styles.primaryButtonText}>Log in</Text>
           </Pressable>
         </View>
       </View>
@@ -171,42 +255,45 @@ export default function DealsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
+      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}> 
         <View style={styles.pageHeaderContent}>
           <View>
             <Text style={styles.pageHeaderTitle}>Deals</Text>
             <Text style={styles.pageHeaderSubtitle}>
-              {isLoading ? 'Loading deals...' : 'Store-specific offers'}
+              {isLoading ? 'Loading deals...' : 'Store promotions'}
             </Text>
           </View>
         </View>
       </View>
+
       <View style={styles.content}>
-        {isLoading && <ActivityIndicator size="small" color="#111827" />}
-        {!isLoading && loadError && <Text style={styles.helperText}>{loadError}</Text>}
-        {!isLoading && !loadError && orders.length === 0 && (
-          <Text style={styles.helperText}>No deals yet</Text>
+        {isLoading && (
+          <View style={styles.centerState}>
+            <ActivityIndicator size="small" color="#111827" />
+          </View>
         )}
-        {!isLoading && orders.length > 0 && (
+
+        {!isLoading && loadError && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>Unable to load config</Text>
+            <Text style={styles.infoSubtitle}>{loadError}</Text>
+          </View>
+        )}
+
+        {!isLoading && !loadError && dealsLayout && orderedSections.length === 0 && (
+          <View style={styles.infoCard}>
+            <Text style={styles.infoTitle}>No promotions configured</Text>
+            <Text style={styles.infoSubtitle}>No deal sections were returned for this store.</Text>
+          </View>
+        )}
+
+        {!isLoading && !loadError && dealsLayout && orderedSections.length > 0 && (
           <FlatList
-            data={orders}
-            keyExtractor={(item) => item.orderId}
-            contentContainerStyle={styles.orderList}
-            renderItem={({ item }) => (
-              <View style={styles.orderCard}>
-                <View style={styles.orderHeader}>
-                  <Text style={styles.orderId}>Order {item.orderId}</Text>
-                  <View style={styles.statusPill}>
-                    <Text style={styles.statusText}>{formatOrderStatus(item.status)}</Text>
-                  </View>
-                </View>
-                <Text style={styles.orderWindow}>
-                  {formatPickupWindow(item.pickupWindowStart, item.pickupWindowEnd)}
-                </Text>
-                <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
-              </View>
-            )}
+            data={orderedSections}
+            keyExtractor={(item, index) => `${item.promotionId}-${index}`}
+            contentContainerStyle={styles.sectionsList}
             showsVerticalScrollIndicator={false}
+            renderItem={({ item }) => <DealSectionCard section={item} />}
           />
         )}
       </View>
@@ -240,89 +327,131 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingLeft: 16,
+    paddingRight: 0,
+    paddingTop: 24,
   },
-  helperText: {
-    fontSize: 14,
-    color: '#667085',
-    marginTop: 12,
-  },
-  orderList: {
-    paddingBottom: 16,
-  },
-  orderCard: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E4E7EC',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-  },
-  orderHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 8,
-  },
-  orderId: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111322',
-  },
-  statusPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: '#F3F4F6',
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#374151',
-    textTransform: 'capitalize',
-  },
-  orderWindow: {
-    fontSize: 13,
-    color: '#475467',
-    marginBottom: 10,
-  },
-  orderTotal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111322',
-  },
-  gateCard: {
+  centerState: {
     marginTop: 24,
-    marginHorizontal: 16,
+    alignItems: 'center',
+  },
+  sectionsList: {
+    paddingHorizontal: 0,
+    paddingTop: 2,
+    paddingBottom: 24,
+  },
+  infoCard: {
     padding: 20,
     borderRadius: 18,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#E4E7EC',
   },
-  gateTitle: {
+  infoTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#1C1C1E',
   },
-  gateSubtitle: {
+  infoSubtitle: {
     fontSize: 14,
     color: '#667085',
     marginTop: 8,
     lineHeight: 20,
   },
-  gateButton: {
+  primaryButton: {
     marginTop: 16,
     backgroundColor: '#1C1C1E',
     paddingVertical: 12,
     borderRadius: 999,
     alignItems: 'center',
   },
-  gateButtonText: {
+  primaryButtonText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  section: {
+    marginBottom: 20,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 0,
+    marginBottom: 12,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    paddingHorizontal: 0,
+    marginBottom: 0,
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  sectionDescription: {
+    paddingHorizontal: 0,
+    fontSize: 13,
+    color: '#475467',
+    marginBottom: 10,
+  },
+  sectionBadge: {
+    backgroundColor: '#ecfdf3',
+    color: '#027a48',
+    borderWidth: 1,
+    borderColor: '#abefc6',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  emptyProductsText: {
+    paddingHorizontal: 0,
+    fontSize: 13,
+    color: '#667085',
+  },
+  productList: {
+    paddingHorizontal: 0,
+    paddingBottom: 2,
+    gap: 6,
+  },
+  productCardWrapper: {
+    width: PRODUCT_CARD_WIDTH,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+    borderRadius: 10,
+    padding: 6,
+    backgroundColor: '#fff',
+  },
+  dealPriceRow: {
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#E4E7EC',
+    paddingTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  dealPromoPrice: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111322',
+  },
+  dealOriginalPrice: {
+    fontSize: 11,
+    color: '#98A2B3',
+    textDecorationLine: 'line-through',
+  },
+  dealDiscountLabel: {
+    marginTop: 2,
+    paddingHorizontal: 2,
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#047857',
   },
 });

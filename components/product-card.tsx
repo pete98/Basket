@@ -9,11 +9,24 @@ import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 interface ProductCardProps {
   product: UIProduct;
   onPress?: (product: UIProduct) => void;
+  showPrice?: boolean;
+  showBorder?: boolean;
 }
 
-export function ProductCard({ product, onPress }: ProductCardProps) {
+export function ProductCard({
+  product,
+  onPress,
+  showPrice = true,
+  showBorder = true,
+}: ProductCardProps) {
   const { addItem, updateQuantity, removeItem, state } = useCart();
   const priceValue = typeof product.price === 'number' && Number.isFinite(product.price) ? product.price : 0;
+  const originalPriceValue =
+    typeof product.originalPrice === 'number' && Number.isFinite(product.originalPrice)
+      ? product.originalPrice
+      : undefined;
+  const hasDiscountedPrice =
+    typeof originalPriceValue === 'number' && originalPriceValue > priceValue;
 
   const cartItem = state.items.find((item) => item.id === product.id);
   const quantity = cartItem?.quantity || 0;
@@ -60,7 +73,7 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
           : '';
 
   return (
-    <View style={styles.productCard}>
+    <View style={[styles.productCard, !showBorder && styles.productCardNoBorder]}>
       {quantity > 0 ? (
         <View style={styles.quantityCounter}>
           <TouchableOpacity
@@ -119,7 +132,19 @@ export function ProductCard({ product, onPress }: ProductCardProps) {
           <ThemedText style={styles.productWeightCalories}>{weightCaloriesText}</ThemedText>
         ) : null}
 
-        <ThemedText style={styles.productPrice}>${priceValue.toFixed(2)}</ThemedText>
+        {showPrice && (
+          <View style={styles.priceRow}>
+            <ThemedText style={styles.productPrice}>${priceValue.toFixed(2)}</ThemedText>
+            {hasDiscountedPrice && (
+              <ThemedText style={styles.productOriginalPrice}>
+                ${originalPriceValue.toFixed(2)}
+              </ThemedText>
+            )}
+            {!!product.promoTag && (
+              <ThemedText style={styles.productPromoTag}>{product.promoTag}</ThemedText>
+            )}
+          </View>
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -133,6 +158,11 @@ const styles = StyleSheet.create({
     width: '100%',
     position: 'relative',
     flex: 1,
+    borderWidth: 1,
+    borderColor: '#E4E7EC',
+  },
+  productCardNoBorder: {
+    borderWidth: 0,
   },
   productContent: {
     flex: 1,
@@ -226,5 +256,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#4a5568',
+  },
+  priceRow: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#E4E7EC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  productOriginalPrice: {
+    fontSize: 12,
+    color: '#98A2B3',
+    textDecorationLine: 'line-through',
+  },
+  productPromoTag: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#047857',
+    textTransform: 'uppercase',
   },
 });

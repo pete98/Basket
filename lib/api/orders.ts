@@ -13,7 +13,7 @@ import {
 } from '../types/orders';
 
 const ORDER_API_BASE_URL =
-  process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL || 'https://thick-ducks-double.loca.lt';
+  process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL || 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 
 function getOrderApiUrl(endpoint: string): string {
   return `${ORDER_API_BASE_URL}${endpoint}`;

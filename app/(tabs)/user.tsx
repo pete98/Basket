@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useAuth0 } from 'react-native-auth0';
 import { isAuth0Configured } from '@/lib/config/auth0';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
@@ -19,7 +19,15 @@ import { getStoreById } from '@/lib/api/stores';
 import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
 import * as SecureStore from 'expo-secure-store';
 
-const accountActions = [
+interface ProfileAction {
+  title: string;
+  description: string;
+  icon: string;
+  tint: string;
+  route?: Href;
+}
+
+const accountActions: ProfileAction[] = [
   {
     title: 'Payment Methods',
     description: 'Visa •••• 3941',
@@ -34,7 +42,7 @@ const accountActions = [
   },
 ];
 
-const supportOptions = [
+const supportOptions: ProfileAction[] = [
   {
     title: 'Help Center',
     description: 'FAQs and live chat',
@@ -46,6 +54,7 @@ const supportOptions = [
     description: 'Track or reorder past items',
     icon: 'time-outline',
     tint: '#E9F2FF',
+    route: '/order-history',
   },
 ];
 
@@ -343,7 +352,13 @@ export default function UserProfile() {
                 styles.rowCard,
                 index > 0 && styles.rowSpacing,
                 pressed && styles.rowPressed,
-              ]}>
+              ]}
+              onPress={() => {
+                if (item.route) {
+                  router.push(item.route);
+                }
+              }}
+            >
               <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
                 <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
               </View>

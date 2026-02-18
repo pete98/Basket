@@ -36,6 +36,14 @@ export interface Product {
   fees?: string;
   description?: string;
   imageUrl?: string;
+  // Promotion fields (when active/available for the item)
+  promoPrice?: number;
+  promoTag?: string;
+  promotionId?: number;
+  promotionType?: string;
+  promotionEndsAt?: string;
+  hasPromotion?: boolean;
+  isPromotionEstimated?: boolean;
   calories?: number;
   weight?: number;
   weightUnit?: string;
@@ -61,6 +69,14 @@ export interface InventorySearchHit {
   labels?: string;
   description?: string;
   imageUrl?: string;
+  // Promotion fields (when available from search backend)
+  promoPrice?: number;
+  promoTag?: string;
+  promotionId?: number;
+  promotionType?: string;
+  promotionEndsAt?: string;
+  hasPromotion?: boolean;
+  isPromotionEstimated?: boolean;
   calories?: number;
   weight?: number;
   weightUnit?: string;

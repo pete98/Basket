@@ -27,7 +27,7 @@ function buildPaymentSheetUrl(baseUrl: string, path: string): string {
 }
 
 const paymentsServiceBaseUrl =
-  process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL || 'https://major-pots-press.loca.lt';
+  process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL || 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 const paymentIntentPath = process.env.EXPO_PUBLIC_STRIPE_PAYMENT_SHEET_PATH || '/payments/intents';
 
 export const stripeConfig = {

@@ -3,6 +3,13 @@ export interface UIProduct {
   name: string;
   price: number;
   originalPrice?: number;
+  promoPrice?: number;
+  promoTag?: string;
+  promotionId?: number;
+  promotionType?: string;
+  promotionEndsAt?: string;
+  hasPromotion?: boolean;
+  isPromotionEstimated?: boolean;
   image: string;
   category: string;
   inStock: boolean;

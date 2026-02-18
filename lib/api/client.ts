@@ -9,7 +9,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as InventoryApiExtra;
 const API_BASE_URL =
   extra.inventoryServiceBaseUrl ||
   process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
-  'https://cd7ba7c78881.ngrok-free.app';
+  'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 
 export function getInventoryServiceBaseUrl(): string {
   return API_BASE_URL;

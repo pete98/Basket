@@ -25,14 +25,41 @@ export function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {
     apiProduct.subCategory ||
     '';
   const productName = apiProduct.itemName || apiProduct.productName || '';
+  const hasPromotionFlag = apiProduct.hasPromotion === true;
+  const hasPromotionBoolean = typeof apiProduct.hasPromotion === 'boolean';
+  const promoPrice =
+    typeof apiProduct.promoPrice === 'number' && Number.isFinite(apiProduct.promoPrice)
+      ? apiProduct.promoPrice
+      : undefined;
+  const basePrice =
+    typeof apiProduct.price === 'number' && Number.isFinite(apiProduct.price)
+      ? apiProduct.price
+      : 0;
+  const hasPromoPrice = typeof promoPrice === 'number';
+  const hasPromotion = hasPromotionBoolean ? hasPromotionFlag : hasPromoPrice;
+  const effectivePrice = hasPromotion && hasPromoPrice ? promoPrice : basePrice;
+  const discount =
+    hasPromotion && hasPromoPrice && basePrice > promoPrice
+      ? Math.round(((basePrice - promoPrice) / basePrice) * 100)
+      : undefined;
 
   return {
     id: apiProduct.id.toString(),
     name: productName,
-    price: apiProduct.price,
+    // Inventory API `price` is base/original; for UI use promo when available.
+    price: effectivePrice,
+    originalPrice: hasPromotion ? basePrice : undefined,
+    promoPrice: hasPromotion ? promoPrice : undefined,
+    promoTag: hasPromotion ? apiProduct.promoTag : undefined,
+    promotionId: hasPromotion ? apiProduct.promotionId : undefined,
+    promotionType: hasPromotion ? apiProduct.promotionType : undefined,
+    promotionEndsAt: hasPromotion ? apiProduct.promotionEndsAt : undefined,
+    hasPromotion,
+    isPromotionEstimated: hasPromotion ? apiProduct.isPromotionEstimated : undefined,
     image: apiProduct.imageUrl || '',
     category,
     inStock: apiProduct.stockQuantity > 0,
+    discount,
     weight: apiProduct.weight,
     weightUnit: apiProduct.weightUnit,
     calories: apiProduct.calories,
@@ -51,14 +78,41 @@ export function mapSearchHitToProduct(hit: InventorySearchHit): UIProduct {
     hit.subCategory ||
     '';
   const productName = hit.itemName || hit.productName || '';
+  const hasPromotionFlag = hit.hasPromotion === true;
+  const hasPromotionBoolean = typeof hit.hasPromotion === 'boolean';
+  const promoPrice =
+    typeof hit.promoPrice === 'number' && Number.isFinite(hit.promoPrice)
+      ? hit.promoPrice
+      : undefined;
+  const basePrice =
+    typeof hit.price === 'number' && Number.isFinite(hit.price)
+      ? hit.price
+      : 0;
+  const hasPromoPrice = typeof promoPrice === 'number';
+  const hasPromotion = hasPromotionBoolean ? hasPromotionFlag : hasPromoPrice;
+  const effectivePrice = hasPromotion && hasPromoPrice ? promoPrice : basePrice;
+  const discount =
+    hasPromotion && hasPromoPrice && basePrice > promoPrice
+      ? Math.round(((basePrice - promoPrice) / basePrice) * 100)
+      : undefined;
 
   return {
     id: hit.id.toString(),
     name: productName,
-    price: hit.price,
+    // Search API `price` is base/original; for UI use promo when available.
+    price: effectivePrice,
+    originalPrice: hasPromotion ? basePrice : undefined,
+    promoPrice: hasPromotion ? promoPrice : undefined,
+    promoTag: hasPromotion ? hit.promoTag : undefined,
+    promotionId: hasPromotion ? hit.promotionId : undefined,
+    promotionType: hasPromotion ? hit.promotionType : undefined,
+    promotionEndsAt: hasPromotion ? hit.promotionEndsAt : undefined,
+    hasPromotion,
+    isPromotionEstimated: hasPromotion ? hit.isPromotionEstimated : undefined,
     image: hit.imageUrl || '',
     category,
     inStock: hit.stockQuantity > 0,
+    discount,
     weight: hit.weight,
     weightUnit: hit.weightUnit,
     calories: hit.calories,
