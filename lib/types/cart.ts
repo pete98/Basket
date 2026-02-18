@@ -15,10 +15,19 @@ export interface DeliverySlot {
   available: boolean;
 }
 
+export interface FulfillmentTypeMap {
+  delivery: 'delivery';
+  pickup: 'pickup';
+}
+
 export interface OrderDetails {
-  deliveryDate: string;
-  deliveryTimeSlot: DeliverySlot;
-  deliveryAddress: string;
+  fulfillmentType?: FulfillmentTypeMap[keyof FulfillmentTypeMap];
+  deliveryDate?: string;
+  deliveryTimeSlot?: DeliverySlot;
+  deliveryAddress?: string;
+  pickupEta?: string;
+  pickupLocation?: string;
+  pickupLocationName?: string;
   recipientName: string;
   recipientPhone: string;
   deliveryInstructions?: string;
@@ -27,8 +36,6 @@ export interface OrderDetails {
   promoCode?: string;
   tipAmount?: number;
 }
-
-
 
 
 

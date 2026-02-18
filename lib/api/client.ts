@@ -19,17 +19,20 @@ export interface ApiError {
   message: string;
   status?: number;
   code?: string;
+  fieldErrors?: Record<string, string> | { field?: string; message?: string }[];
 }
 
 export class ApiClientError extends Error {
   status?: number;
   code?: string;
+  response?: ApiError;
 
-  constructor(message: string, status?: number, code?: string) {
+  constructor(message: string, status?: number, code?: string, response?: ApiError) {
     super(message);
     this.name = 'ApiClientError';
     this.status = status;
     this.code = code;
+    this.response = response;
   }
 }
 

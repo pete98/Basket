@@ -8,12 +8,41 @@ interface UserApiExtra {
 }
 
 const extra = (Constants.expoConfig?.extra ?? {}) as UserApiExtra;
-const USER_API_BASE_URL = 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
+const USER_API_BASE_URL =
+  extra.userServiceBaseUrl ||
+  process.env.EXPO_PUBLIC_USER_SERVICE_BASE_URL ||
+  'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 const EXPECTED_AUTH0_AUDIENCE =
   extra.auth0Audience || process.env.EXPO_PUBLIC_AUTH0_AUDIENCE || '';
 
 export function getUserServiceBaseUrl() {
   return USER_API_BASE_URL;
+}
+
+export interface UserProfileResponse {
+  id: number;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  streetAddress?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+}
+
+export interface UpdateUserProfileRequest {
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  birthDate?: string;
+  streetAddress?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
 }
 
 function readAuthorizationHeader(headers: HeadersInit | undefined): string | null {
@@ -134,7 +163,7 @@ export async function getUserByAuth0(accessToken: string) {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
-  });
+  }) as Promise<UserProfileResponse>;
 }
 
 export async function createUser(
@@ -159,13 +188,7 @@ export async function createUser(
 export async function updateUserProfile(
   userId: number | string,
   accessToken: string,
-  payload: {
-    firstName: string;
-    lastName: string;
-    phone: string;
-    birthDate: string;
-    email?: string;
-  }
+  payload: UpdateUserProfileRequest
 ) {
   return userApiRequest(`/api/users/${userId}`, {
     method: 'PATCH',
@@ -173,7 +196,7 @@ export async function updateUserProfile(
       Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify(payload),
-  });
+  }) as Promise<UserProfileResponse>;
 }
 
 export async function setActiveStore(

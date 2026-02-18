@@ -26,6 +26,12 @@ function buildPaymentSheetUrl(baseUrl: string, path: string): string {
   return `${baseUrl}${path}`;
 }
 
+function resolveUrlScheme(value: string | string[] | undefined): string {
+  if (!value) return '';
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value;
+}
+
 const paymentsServiceBaseUrl =
   process.env.EXPO_PUBLIC_PAYMENTS_BASE_URL || 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 const paymentIntentPath = process.env.EXPO_PUBLIC_STRIPE_PAYMENT_SHEET_PATH || '/payments/intents';
@@ -33,7 +39,7 @@ const paymentIntentPath = process.env.EXPO_PUBLIC_STRIPE_PAYMENT_SHEET_PATH || '
 export const stripeConfig = {
   publishableKey: resolveStripeValue(extra.stripePublishableKey, 'Stripe publishable key'),
   merchantIdentifier: extra.stripeMerchantId ?? '',
-  urlScheme: extra.stripeUrlScheme ?? Constants.expoConfig?.scheme ?? '',
+  urlScheme: resolveUrlScheme(extra.stripeUrlScheme ?? Constants.expoConfig?.scheme),
   paymentsServiceBaseUrl,
   paymentIntentPath,
   paymentIntentUrl: buildPaymentSheetUrl(paymentsServiceBaseUrl, paymentIntentPath),

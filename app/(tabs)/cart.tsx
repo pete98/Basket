@@ -29,23 +29,9 @@ export default function CartScreen() {
   const finalTotal = total + tax;
   const itemCountLabel = items.length === 1 ? '1 item' : `${items.length} items`;
 
-  const pickupEtaMessage =
-    'Ready within about 15 minutes once the store confirms your order.';
-  const pickupLocationAddress = '617 Alabama Ave SW Birmingham, AL 35211';
-  const pickupLocationLabel = 'Basket Market';
-
   const handleCheckout = () => {
     if (!items.length) return;
-    const checkoutTarget = {
-      pathname: '/order-summary',
-      params: {
-        fulfillmentType: 'pickup',
-        pickupEta: pickupEtaMessage,
-        pickupLocation: pickupLocationAddress,
-        pickupLocationName: pickupLocationLabel,
-        deliveryFee: '0',
-      },
-    };
+    const checkoutTarget = { pathname: '/schedule-order' as const };
 
     if (!ensureAuthenticated(checkoutTarget)) return;
     router.push(checkoutTarget);

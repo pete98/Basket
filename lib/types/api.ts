@@ -127,6 +127,7 @@ export interface Store {
   timezone?: string;
   status: string;
   pickupEnabled?: boolean;
+  deliveryEnabled?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

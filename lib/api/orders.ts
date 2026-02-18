@@ -1,10 +1,13 @@
-import { ApiClientError } from './client';
+import Constants from 'expo-constants';
+import { ApiClientError, type ApiError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 import {
   CancelOrderRequest,
   CompletePickupRequest,
   ConfirmPaymentRequest,
   CreateOrderRequest,
+  DeliveryQuoteRequest,
+  DeliveryQuoteResponse,
   Order,
   OrderStatusResponse,
   PickupSlotsResponse,
@@ -12,8 +15,15 @@ import {
   StoreOrderSummary,
 } from '../types/orders';
 
+interface OrderApiExtra {
+  orderServiceBaseUrl?: string;
+}
+
+const extra = (Constants.expoConfig?.extra ?? {}) as OrderApiExtra;
 const ORDER_API_BASE_URL =
-  process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL || 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
+  extra.orderServiceBaseUrl ||
+  process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL ||
+  'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
 
 function getOrderApiUrl(endpoint: string): string {
   return `${ORDER_API_BASE_URL}${endpoint}`;
@@ -35,6 +45,30 @@ function formatOrderApiErrorMessage(status: number, rawBody: string): string {
     return `${apiMessage} (${JSON.stringify(errorData.details)})`;
   } catch {
     return `${defaultMessage}: ${rawBody}`;
+  }
+}
+
+function parseOrderApiError(status: number, rawBody: string): ApiError | undefined {
+  if (!rawBody) return undefined;
+  try {
+    const errorData = JSON.parse(rawBody) as {
+      status?: number;
+      code?: string;
+      error?: { message?: string; code?: string };
+      message?: string;
+      fieldErrors?: Record<string, string> | { field?: string; message?: string }[];
+    };
+
+    const message = errorData.error?.message || errorData.message;
+    const code = errorData.code || errorData.error?.code;
+    return {
+      status: typeof errorData.status === 'number' ? errorData.status : status,
+      message: message || `API request failed with status ${status}`,
+      code: typeof code === 'string' ? code : undefined,
+      fieldErrors: errorData.fieldErrors,
+    };
+  } catch {
+    return undefined;
   }
 }
 
@@ -72,7 +106,8 @@ async function orderApiRequest<T>(endpoint: string, options: RequestInit = {}): 
     if (!response.ok) {
       const rawErrorBody = await response.text();
       const message = formatOrderApiErrorMessage(response.status, rawErrorBody);
-      throw new ApiClientError(message, response.status);
+      const errorResponse = parseOrderApiError(response.status, rawErrorBody);
+      throw new ApiClientError(message, response.status, errorResponse?.code, errorResponse);
     }
 
     try {
@@ -105,6 +140,21 @@ export interface CreateOrderParams {
 
 export async function createOrder(params: CreateOrderParams): Promise<Order> {
   return orderApiRequest<Order>('/orders', {
+    method: 'POST',
+    body: JSON.stringify(params.payload),
+    signal: params.signal,
+  });
+}
+
+export interface CreateDeliveryQuoteParams {
+  payload: DeliveryQuoteRequest;
+  signal?: AbortSignal;
+}
+
+export async function createDeliveryQuote(
+  params: CreateDeliveryQuoteParams
+): Promise<DeliveryQuoteResponse> {
+  return orderApiRequest<DeliveryQuoteResponse>('/orders/delivery-quote', {
     method: 'POST',
     body: JSON.stringify(params.payload),
     signal: params.signal,
