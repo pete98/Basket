@@ -2,7 +2,7 @@ import { ApiClientError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 import type { DealsSectionsResponse } from '../types/promotions';
 
-const PROMOTION_API_BASE_URL = 'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
+const PROMOTION_API_BASE_URL = 'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
 
 export interface GetDealsSectionsParams {
   storeId: number;

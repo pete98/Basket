@@ -3,6 +3,7 @@ import { ApiClientError, type ApiError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
 import {
   CancelOrderRequest,
+  CustomerSubstitutionDecisionRequest,
   CompletePickupRequest,
   ConfirmPaymentRequest,
   CreateOrderRequest,
@@ -23,7 +24,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as OrderApiExtra;
 const ORDER_API_BASE_URL =
   extra.orderServiceBaseUrl ||
   process.env.EXPO_PUBLIC_ORDER_SERVICE_BASE_URL ||
-  'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
+  'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
 
 function getOrderApiUrl(endpoint: string): string {
   return `${ORDER_API_BASE_URL}${endpoint}`;
@@ -264,6 +265,43 @@ export async function getStoreOrders(params: GetStoreOrdersParams): Promise<Stor
   return orderApiRequest<StoreOrderSummary[]>(endpoint, {
     signal: params.signal,
   });
+}
+
+export interface GetUserOrdersParams {
+  userId: number;
+  accessToken?: string;
+  signal?: AbortSignal;
+}
+
+export async function getUserOrders(params: GetUserOrdersParams): Promise<StoreOrderSummary[]> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
+  return orderApiRequest<StoreOrderSummary[]>(`/users/${params.userId}/orders`, {
+    headers,
+    signal: params.signal,
+  });
+}
+
+export interface DecideSubstitutionParams {
+  orderId: string;
+  substitutionId: number;
+  payload: CustomerSubstitutionDecisionRequest;
+  signal?: AbortSignal;
+}
+
+export async function decideSubstitution(
+  params: DecideSubstitutionParams
+): Promise<Order> {
+  return orderApiRequest<Order>(
+    `/orders/${params.orderId}/substitutions/${params.substitutionId}/decision`,
+    {
+      method: 'POST',
+      body: JSON.stringify(params.payload),
+      signal: params.signal,
+    }
+  );
 }
 
 export interface GetPickupSlotsParams {

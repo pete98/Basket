@@ -29,6 +29,47 @@ export const DELIVERY_STATUSES = {
 
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[keyof typeof DELIVERY_STATUSES];
 
+export const STORE_REVIEW_STATUSES = {
+  pending: 'PENDING',
+  accepted: 'ACCEPTED',
+  rejected: 'REJECTED',
+} as const;
+
+export type StoreReviewStatus =
+  (typeof STORE_REVIEW_STATUSES)[keyof typeof STORE_REVIEW_STATUSES];
+
+export const PAYMENT_COLLECTION_STATUSES = {
+  notStarted: 'NOT_STARTED',
+  authorizing: 'AUTHORIZING',
+  authorized: 'AUTHORIZED',
+  captureRequested: 'CAPTURE_REQUESTED',
+  captured: 'CAPTURED',
+  authCancelled: 'AUTH_CANCELLED',
+  failed: 'FAILED',
+} as const;
+
+export type PaymentCollectionStatus =
+  (typeof PAYMENT_COLLECTION_STATUSES)[keyof typeof PAYMENT_COLLECTION_STATUSES];
+
+export const ORDER_SUBSTITUTION_STATUSES = {
+  pendingCustomer: 'PENDING_CUSTOMER',
+  acceptedByCustomer: 'ACCEPTED_BY_CUSTOMER',
+  declinedByCustomer: 'DECLINED_BY_CUSTOMER',
+  applied: 'APPLIED',
+  cancelled: 'CANCELLED',
+} as const;
+
+export type OrderSubstitutionStatus =
+  (typeof ORDER_SUBSTITUTION_STATUSES)[keyof typeof ORDER_SUBSTITUTION_STATUSES];
+
+export const SUBSTITUTION_DECISIONS = {
+  accept: 'ACCEPT',
+  decline: 'DECLINE',
+} as const;
+
+export type SubstitutionDecision =
+  (typeof SUBSTITUTION_DECISIONS)[keyof typeof SUBSTITUTION_DECISIONS];
+
 export interface OrderItemInput {
   productId: number;
   quantity: number;
@@ -95,6 +136,12 @@ export interface Order {
   userId: number;
   storeId: number;
   status: OrderStatus;
+  storeReviewStatus?: StoreReviewStatus;
+  paymentCollectionStatus?: PaymentCollectionStatus;
+  hasPendingSubstitutions?: boolean;
+  pendingSubstitutionCount?: number;
+  customerName?: string | null;
+  customerPhone?: string | null;
   fulfillmentType?: FulfillmentType;
   deliveryStatus?: DeliveryStatus;
   currency: string;
@@ -116,11 +163,15 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   items: OrderLineItem[];
+  substitutions?: OrderSubstitution[];
 }
 
 export interface OrderStatusResponse {
   orderId: string;
   status: OrderStatus;
+  storeReviewStatus?: StoreReviewStatus;
+  paymentCollectionStatus?: PaymentCollectionStatus;
+  hasPendingSubstitutions?: boolean;
   fulfillmentType?: FulfillmentType;
   deliveryStatus?: DeliveryStatus;
   updatedAt: string;
@@ -148,11 +199,40 @@ export interface CompletePickupRequest {
 export interface StoreOrderSummary {
   orderId: string;
   userId: number;
+  storeId?: number;
   status: OrderStatus;
+  storeReviewStatus?: StoreReviewStatus;
+  paymentCollectionStatus?: PaymentCollectionStatus;
+  fulfillmentType?: FulfillmentType;
+  deliveryStatus?: DeliveryStatus;
+  customerName?: string | null;
+  customerPhone?: string | null;
+  pendingSubstitutionCount?: number;
+  deliveryTrackingUrl?: string | null;
   total: number;
   pickupWindowStart: string;
   pickupWindowEnd: string;
   createdAt: string;
+}
+
+export interface OrderSubstitution {
+  id: number;
+  orderItemId?: number | null;
+  requestedProductId?: number | null;
+  replacementProductId?: number | null;
+  replacementName?: string | null;
+  replacementQty?: number | null;
+  replacementUnitPrice?: number | null;
+  reason?: string | null;
+  status: OrderSubstitutionStatus;
+  proposedBy?: string | null;
+  proposedAt?: string | null;
+  customerDecision?: SubstitutionDecision | null;
+  customerDecisionAt?: string | null;
+}
+
+export interface CustomerSubstitutionDecisionRequest {
+  decision: SubstitutionDecision;
 }
 
 export interface PickupSlot {

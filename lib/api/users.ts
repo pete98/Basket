@@ -11,7 +11,7 @@ const extra = (Constants.expoConfig?.extra ?? {}) as UserApiExtra;
 const USER_API_BASE_URL =
   extra.userServiceBaseUrl ||
   process.env.EXPO_PUBLIC_USER_SERVICE_BASE_URL ||
-  'https://f6ae-2600-4041-41f1-1600-dc09-1e3-3832-be9b.ngrok-free.app';
+  'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
 const EXPECTED_AUTH0_AUDIENCE =
   extra.auth0Audience || process.env.EXPO_PUBLIC_AUTH0_AUDIENCE || '';
 

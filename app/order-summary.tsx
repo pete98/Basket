@@ -2,7 +2,7 @@ import { useCart } from '@/contexts/cart-context';
 import { useCheckout } from '@/contexts/checkout-context';
 import { useLocation } from '@/contexts/location-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
-import { confirmPayment, createDeliveryQuote, createOrder } from '@/lib/api/orders';
+import { createDeliveryQuote, createOrder } from '@/lib/api/orders';
 import { createPaymentIntent } from '@/lib/api/payments';
 import { getStoreById } from '@/lib/api/stores';
 import { getActiveStore, getUserByAuth0, type UserProfileResponse } from '@/lib/api/users';
@@ -155,13 +155,6 @@ function toMoney(value: unknown): number {
 function buildStripeReturnUrl(urlScheme: string): string | null {
   if (!urlScheme) return null;
   return `${urlScheme}://stripe-redirect`;
-}
-
-function resolvePaymentIntentId(paymentIntentId: string | undefined, clientSecret: string): string | null {
-  if (paymentIntentId) return paymentIntentId;
-  const secretPrefix = clientSecret.split('_secret_')[0];
-  if (!secretPrefix) return null;
-  return secretPrefix;
 }
 
 function buildResolvedPickupWindow(
@@ -628,27 +621,9 @@ export default function OrderSummaryScreen() {
         return;
       }
 
-      const paymentIntentId = resolvePaymentIntentId(
-        paymentIntentData.paymentIntentId,
-        paymentIntentData.clientSecret
-      );
-      if (!paymentIntentId) {
-        setPlaceOrderError('Missing payment intent details. Please try again.');
-        return;
-      }
-
-      await confirmPayment({
-        orderId: order.orderId,
-        payload: {
-          paymentIntentId,
-          status: 'SUCCEEDED',
-          paidAt: new Date().toISOString(),
-        },
-      });
-
       clearCart();
       resetCheckout();
-      router.replace('/deals');
+      router.replace('/order-history');
     } catch (error) {
       setPlaceOrderError(error instanceof Error ? error.message : 'Unable to place order.');
     } finally {

@@ -1,31 +1,14 @@
-import { useLocation } from '@/contexts/location-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
-import { getStoreOrders } from '@/lib/api/orders';
-import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
-import { type StoreOrderSummary } from '@/lib/types/orders';
+import { getUserOrders } from '@/lib/api/orders';
+import { getUserByAuth0 } from '@/lib/api/users';
+import { type PaymentCollectionStatus, type StoreOrderSummary, type StoreReviewStatus } from '@/lib/types/orders';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth0 } from 'react-native-auth0';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
-
-function parseStoreId(locationId: string): number | null {
-  if (!locationId.startsWith('store-')) return null;
-  const rawId = locationId.replace('store-', '');
-  const storeId = Number.parseInt(rawId, 10);
-  if (Number.isNaN(storeId)) return null;
-  return storeId;
-}
-
-function getActiveStoreId(activeStore: unknown): number | null {
-  if (!activeStore || typeof activeStore !== 'object') return null;
-  const store = activeStore as { storeId?: number; id?: number };
-  if (typeof store.storeId === 'number') return store.storeId;
-  if (typeof store.id === 'number') return store.id;
-  return null;
-}
 
 function formatPickupWindow(start: string, end: string): string {
   const startDate = new Date(start);
@@ -53,29 +36,47 @@ function formatOrderStatus(status: string): string {
   return status.replace(/_/g, ' ').toLowerCase();
 }
 
+function formatStoreReviewStatus(status?: StoreReviewStatus): string {
+  if (!status) return 'unknown';
+  return status.replace(/_/g, ' ').toLowerCase();
+}
+
+function formatPaymentCollectionStatus(status?: PaymentCollectionStatus): string {
+  if (!status) return 'unknown';
+  return status.replace(/_/g, ' ').toLowerCase();
+}
+
+function canTrackDelivery(order: StoreOrderSummary): boolean {
+  return (
+    order.fulfillmentType === 'DELIVERY' &&
+    typeof order.deliveryTrackingUrl === 'string' &&
+    order.deliveryTrackingUrl.trim().length > 0
+  );
+}
+
 export default function OrderHistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, openLogin } = useAuthGuard();
-  const { selectedLocation } = useLocation();
   const { getCredentials } = useAuth0();
   const [orders, setOrders] = useState<StoreOrderSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
-  const storeId = activeStoreId ?? parseStoreId(selectedLocation.id);
+  const [resolvedUserId, setResolvedUserId] = useState<number | null>(null);
+  const [resolvedAccessToken, setResolvedAccessToken] = useState<string | null>(null);
 
-  async function getAccessToken() {
+  const getAccessToken = useCallback(async () => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
     if (accessToken) return accessToken;
     const credentials = await getCredentials();
     accessToken = credentials?.accessToken ?? null;
     if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
     return accessToken;
-  }
+  }, [getCredentials]);
 
   useEffect(() => {
     if (!isLoggedIn) {
-      setActiveStoreId(null);
+      setResolvedUserId(null);
+      setResolvedAccessToken(null);
       return;
     }
 
@@ -86,22 +87,25 @@ export default function OrderHistoryScreen() {
         const profile = await getUserByAuth0(accessToken);
         const rawUserId = (profile as { id?: number | string }).id;
         if (!rawUserId) return null;
-        const activeStore = await getActiveStore(rawUserId, accessToken);
-        return getActiveStoreId(activeStore);
+        const userId = Number(rawUserId);
+        if (Number.isNaN(userId)) return null;
+        return { userId, accessToken };
       })
-      .then((storeIdValue) => {
+      .then((resolvedIdentity) => {
         if (!isActive) return;
-        setActiveStoreId(storeIdValue);
+        setResolvedUserId(resolvedIdentity?.userId ?? null);
+        setResolvedAccessToken(resolvedIdentity?.accessToken ?? null);
       })
       .catch(() => {
         if (!isActive) return;
-        setActiveStoreId(null);
+        setResolvedUserId(null);
+        setResolvedAccessToken(null);
       });
 
     return () => {
       isActive = false;
     };
-  }, [isLoggedIn]);
+  }, [getAccessToken, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -110,9 +114,9 @@ export default function OrderHistoryScreen() {
       setIsLoading(false);
       return;
     }
-    if (!storeId) {
+    if (!resolvedUserId || !resolvedAccessToken) {
       setOrders([]);
-      setLoadError('Select a store to view your order history.');
+      setLoadError(null);
       setIsLoading(false);
       return;
     }
@@ -121,7 +125,7 @@ export default function OrderHistoryScreen() {
     setIsLoading(true);
     setLoadError(null);
 
-    getStoreOrders({ storeId })
+    getUserOrders({ userId: resolvedUserId, accessToken: resolvedAccessToken })
       .then((data) => {
         if (!isActive) return;
         setOrders(data);
@@ -139,7 +143,15 @@ export default function OrderHistoryScreen() {
     return () => {
       isActive = false;
     };
-  }, [isLoggedIn, storeId]);
+  }, [isLoggedIn, resolvedAccessToken, resolvedUserId]);
+
+  async function handleTrackDelivery(url: string) {
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setLoadError('Unable to open tracking link right now.');
+    }
+  }
 
   if (!isLoggedIn) {
     return (
@@ -173,7 +185,7 @@ export default function OrderHistoryScreen() {
           <View>
             <Text style={styles.pageHeaderTitle}>Order History</Text>
             <Text style={styles.pageHeaderSubtitle}>
-              {isLoading ? 'Loading orders...' : 'Past orders by store'}
+              {isLoading ? 'Loading orders...' : 'Track your store approval and payment capture'}
             </Text>
           </View>
         </View>
@@ -200,6 +212,25 @@ export default function OrderHistoryScreen() {
                 <Text style={styles.orderWindow}>
                   {formatPickupWindow(item.pickupWindowStart, item.pickupWindowEnd)}
                 </Text>
+                <Text style={styles.orderMeta}>
+                  Store review: {formatStoreReviewStatus(item.storeReviewStatus)}
+                </Text>
+                <Text style={styles.orderMeta}>
+                  Payment: {formatPaymentCollectionStatus(item.paymentCollectionStatus)}
+                </Text>
+                {(item.pendingSubstitutionCount ?? 0) > 0 && (
+                  <Text style={styles.pendingSubstitutions}>
+                    Waiting on your substitution decision ({item.pendingSubstitutionCount})
+                  </Text>
+                )}
+                {canTrackDelivery(item) ? (
+                  <Pressable
+                    style={styles.trackButton}
+                    onPress={() => handleTrackDelivery(item.deliveryTrackingUrl!.trim())}
+                  >
+                    <Text style={styles.trackButtonText}>Track Delivery</Text>
+                  </Pressable>
+                ) : null}
                 <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
               </View>
             )}
@@ -283,12 +314,38 @@ const styles = StyleSheet.create({
   orderWindow: {
     fontSize: 13,
     color: '#475467',
-    marginBottom: 10,
+    marginBottom: 8,
+  },
+  orderMeta: {
+    fontSize: 12,
+    color: '#667085',
+    marginBottom: 4,
+    textTransform: 'capitalize',
+  },
+  pendingSubstitutions: {
+    fontSize: 12,
+    color: '#b45309',
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  trackButton: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: '#111827',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  trackButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   orderTotal: {
     fontSize: 16,
     fontWeight: '700',
     color: '#111322',
+    marginTop: 6,
   },
   gateCard: {
     marginTop: 24,
