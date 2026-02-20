@@ -21,39 +21,58 @@ export async function getStoresByZip(params: GetStoresByZipParams): Promise<Stor
 
 export interface GetStoreByIdParams {
   storeId: number;
+  accessToken?: string;
   signal?: AbortSignal;
 }
 
 export async function getStoreById(params: GetStoreByIdParams): Promise<Store> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
   return apiRequest<Store>(`/api/stores/${params.storeId}`, {
+    headers,
     signal: params.signal,
   });
 }
 
 export interface GetStoreHomeLayoutParams {
   storeId: number;
+  accessToken?: string;
   signal?: AbortSignal;
 }
 
 export async function getStoreHomeLayout(params: GetStoreHomeLayoutParams): Promise<StoreHomeLayout> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
   return apiRequest<StoreHomeLayout>(`/api/stores/${params.storeId}/home-layout`, {
+    headers,
     signal: params.signal,
   });
 }
 
 export interface GetStoreInventoryParams {
   storeId: number;
+  accessToken?: string;
   signal?: AbortSignal;
 }
 
 export async function getStoreInventory(params: GetStoreInventoryParams): Promise<Product[]> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
   return apiRequest<Product[]>(`/api/stores/${params.storeId}/inventory`, {
+    headers,
     signal: params.signal,
   });
 }
 
 export interface GetStoreCategoriesParams {
   storeId: number;
+  accessToken?: string;
   signal?: AbortSignal;
 }
 
@@ -103,9 +122,14 @@ function normalizeStoreCategory(raw: unknown): Category | null {
 }
 
 export async function getStoreCategories(params: GetStoreCategoriesParams): Promise<Category[]> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
   const response = await apiRequest<Category[] | { data?: Category[] }>(
     `/api/stores/${params.storeId}/categories`,
     {
+      headers,
       signal: params.signal,
     }
   );

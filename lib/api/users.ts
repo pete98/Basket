@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { ApiClientError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
+import { withStoredAccessTokenHeader } from './auth-header';
 
 interface UserApiExtra {
   userServiceBaseUrl?: string;
@@ -91,9 +92,10 @@ function maskToken(token: string): string {
 async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
   const url = `${USER_API_BASE_URL}${endpoint}`;
   const method = options.method ?? 'GET';
+  const authHeaders = await withStoredAccessTokenHeader(options.headers);
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...authHeaders,
   };
 
   const authorizationHeader = readAuthorizationHeader(headers);

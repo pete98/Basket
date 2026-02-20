@@ -399,10 +399,15 @@ export default function OrderSummaryScreen() {
     }
 
     let isActive = true;
-    getStoreById({ storeId })
+    getAccessToken()
+      .then(async (accessToken) => {
+        if (!accessToken) return null;
+        const store = await getStoreById({ storeId, accessToken });
+        return store;
+      })
       .then((store) => {
         if (!isActive) return;
-        setStoreProfile(store);
+        setStoreProfile(store ?? null);
       })
       .catch(() => {
         if (!isActive) return;
@@ -412,7 +417,7 @@ export default function OrderSummaryScreen() {
     return () => {
       isActive = false;
     };
-  }, [storeId]);
+  }, [getAccessToken, storeId]);
 
   useEffect(() => {
     setDraftOrder(null);

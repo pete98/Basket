@@ -11,7 +11,7 @@ import type {
   DealsSectionsResponse,
 } from '@/lib/types/promotions';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -145,14 +145,14 @@ export default function DealsScreen() {
     return dealsLayout.sections;
   }, [dealsLayout]);
 
-  async function getAccessToken() {
+  const getAccessToken = useCallback(async () => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
     if (accessToken) return accessToken;
     const credentials = await getCredentials();
     accessToken = credentials?.accessToken ?? null;
     if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
     return accessToken;
-  }
+  }, [getCredentials]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -183,7 +183,7 @@ export default function DealsScreen() {
     return () => {
       isActive = false;
     };
-  }, [isLoggedIn]);
+  }, [getAccessToken, isLoggedIn]);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -206,13 +206,22 @@ export default function DealsScreen() {
     setIsLoading(true);
     setLoadError(null);
 
-    getDealsSections({
-      storeId: resolvedStoreId,
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!isActive) return;
+    getAccessToken()
+      .then(async (accessToken) => {
+        if (!accessToken) {
+          if (!isActive) return null;
+          setDealsLayout(null);
+          setLoadError('Log in to load deals.');
+          return null;
+        }
+        const response = await getDealsSections({
+          storeId: resolvedStoreId,
+          accessToken,
+          signal: controller.signal,
+        });
+        if (!isActive) return null;
         setDealsLayout(response);
+        return response;
       })
       .catch((error) => {
         if (!isActive) return;
@@ -229,7 +238,7 @@ export default function DealsScreen() {
       isActive = false;
       controller.abort();
     };
-  }, [isLoggedIn, resolvedStoreId]);
+  }, [getAccessToken, isLoggedIn, resolvedStoreId]);
 
   if (!isLoggedIn) {
     return (

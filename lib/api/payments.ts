@@ -2,6 +2,7 @@ import { stripeConfig } from '@/lib/config/stripe';
 
 import { ApiClientError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
+import { withStoredAccessTokenHeader } from './auth-header';
 
 export interface CreatePaymentIntentRequest {
   orderId: string;
@@ -43,11 +44,12 @@ async function paymentApiRequest<T>(url: string, options: RequestInit = {}): Pro
     'ngrok-skip-browser-warning': 'true',
   };
 
+  const authHeaders = await withStoredAccessTokenHeader(options.headers);
   const config: RequestInit = {
     ...options,
     headers: {
       ...defaultHeaders,
-      ...options.headers,
+      ...authHeaders,
     },
   };
 

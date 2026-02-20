@@ -1,11 +1,13 @@
 import { ApiClientError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
+import { withStoredAccessTokenHeader } from './auth-header';
 import type { DealsSectionsResponse } from '../types/promotions';
 
 const PROMOTION_API_BASE_URL = 'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
 
 export interface GetDealsSectionsParams {
   storeId: number;
+  accessToken?: string;
   signal?: AbortSignal;
 }
 
@@ -16,9 +18,10 @@ function getPromotionApiUrl(endpoint: string): string {
 async function promotionApiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = getPromotionApiUrl(endpoint);
   const method = options.method ?? 'GET';
+  const authHeaders = await withStoredAccessTokenHeader(options.headers);
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...authHeaders,
   };
 
   const requestStartedAt = logApiRequest({
@@ -74,9 +77,14 @@ async function promotionApiRequest<T>(endpoint: string, options: RequestInit = {
 export async function getDealsSections(
   params: GetDealsSectionsParams
 ): Promise<DealsSectionsResponse> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
   return promotionApiRequest<DealsSectionsResponse>(
     `/stores/${params.storeId}/deals/sections`,
     {
+      headers,
       signal: params.signal,
     }
   );

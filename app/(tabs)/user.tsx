@@ -137,7 +137,7 @@ export default function UserProfile() {
           return;
         }
 
-        const store = await getStoreById({ storeId: activeStoreId });
+        const store = await getStoreById({ storeId: activeStoreId, accessToken });
         if (!isActive) return;
         const streetLine = store.street2 ? `${store.street}, ${store.street2}` : store.street;
         setSavedStoreTitle(store.displayName || `Store #${activeStoreId}`);

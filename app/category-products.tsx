@@ -6,8 +6,9 @@ import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
 import { formatWeight, mapApiProductToProduct } from '@/lib/utils/products';
 import { Ionicons } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -20,6 +21,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import { useAuth0 } from 'react-native-auth0';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface CategoryParams {
@@ -27,6 +29,8 @@ interface CategoryParams {
   code?: string;
   storeId?: string;
 }
+
+const ACCESS_TOKEN_KEY = 'auth0_access_token';
 
 function parseStoreIdParam(storeId: string | undefined): number | null {
   if (!storeId) return null;
@@ -55,6 +59,7 @@ export default function CategoryProductsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<CategoryParams>();
   const insets = useSafeAreaInsets();
+  const { getCredentials } = useAuth0();
   const { addItem, updateQuantity, state } = useCart();
   const [products, setProducts] = useState<UIProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,6 +91,14 @@ export default function CategoryProductsScreen() {
   );
   const routeStoreId = parseStoreIdParam(typeof params.storeId === 'string' ? params.storeId : undefined);
   const resolvedStoreId = routeStoreId;
+  const getAccessToken = useCallback(async () => {
+    let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+    if (accessToken) return accessToken;
+    const credentials = await getCredentials();
+    accessToken = credentials?.accessToken ?? null;
+    if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
+    return accessToken;
+  }, [getCredentials]);
 
   useEffect(() => {
     let isMounted = true;
@@ -111,9 +124,17 @@ export default function CategoryProductsScreen() {
       try {
         setIsLoading(true);
         setErrorMessage(null);
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          if (!isMounted) return;
+          setProducts([]);
+          setErrorMessage('Log in to load products.');
+          return;
+        }
 
         const inventory = await getStoreInventory({
           storeId: resolvedStoreId,
+          accessToken,
           signal: abortController.signal,
         });
         const mappedProducts = inventory.map(mapApiProductToProduct);
@@ -145,7 +166,7 @@ export default function CategoryProductsScreen() {
       isMounted = false;
       abortController.abort();
     };
-  }, [categoryCandidates, normalizedCategoryCandidates, resolvedStoreId]);
+  }, [categoryCandidates, getAccessToken, normalizedCategoryCandidates, resolvedStoreId]);
 
   function openProductModal(product: UIProduct) {
     const cartItem = state.items.find((item) => item.id === product.id);

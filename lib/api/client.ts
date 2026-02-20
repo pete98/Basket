@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
+import { withStoredAccessTokenHeader } from './auth-header';
 
 interface InventoryApiExtra {
   inventoryServiceBaseUrl?: string;
@@ -61,17 +62,18 @@ export async function apiRequest<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const method = options.method ?? 'GET';
-  
+
   const defaultHeaders: HeadersInit = {
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true', // Required for ngrok free tier
   };
+  const authHeaders = await withStoredAccessTokenHeader(options.headers);
 
   const config: RequestInit = {
     ...options,
     headers: {
       ...defaultHeaders,
-      ...options.headers,
+      ...authHeaders,
     },
   };
 

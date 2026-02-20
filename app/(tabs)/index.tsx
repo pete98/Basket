@@ -592,6 +592,14 @@ export default function HomeScreen() {
   const autocompleteAbortControllerRef = useRef<AbortController | null>(null);
   const resolvedStoreId = activeStoreId;
   const canSearchByStore = resolvedStoreId !== null;
+  const getAccessToken = useCallback(async () => {
+    let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+    if (accessToken) return accessToken;
+    const credentials = await getCredentials();
+    accessToken = credentials?.accessToken ?? null;
+    if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
+    return accessToken;
+  }, [getCredentials]);
 
   useEffect(() => {
     if (!__DEV__) return;
@@ -621,14 +629,7 @@ export default function HomeScreen() {
 
     async function loadActiveStore() {
       try {
-        let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
-        if (!accessToken) {
-          const credentials = await getCredentials();
-          accessToken = credentials?.accessToken ?? null;
-          if (accessToken) {
-            await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
-          }
-        }
+        const accessToken = await getAccessToken();
 
         if (!accessToken) {
           if (!isActive) return;
@@ -670,7 +671,7 @@ export default function HomeScreen() {
     return () => {
       isActive = false;
     };
-  }, [getCredentials, isLoggedIn]);
+  }, [getAccessToken, isLoggedIn]);
 
   useEffect(() => {
     if (resolvedStoreId === null) {
@@ -688,8 +689,16 @@ export default function HomeScreen() {
         if (__DEV__) {
           console.log('[home] requesting home-layout:', getApiUrl(`/api/stores/${resolvedStoreId}/home-layout`));
         }
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          if (!isActive) return;
+          setHomeLayout(null);
+          setHomeLayoutError('Log in to load home layout.');
+          return;
+        }
         const layout = await getStoreHomeLayout({
           storeId: resolvedStoreId,
+          accessToken,
           signal: abortController.signal,
         });
         if (!isActive) return;
@@ -708,7 +717,7 @@ export default function HomeScreen() {
       isActive = false;
       abortController.abort();
     };
-  }, [resolvedStoreId]);
+  }, [getAccessToken, resolvedStoreId]);
   
   // Fetch store categories only (no master categories)
   useEffect(() => {
@@ -729,8 +738,16 @@ export default function HomeScreen() {
         if (__DEV__) {
           console.log('[home] requesting store categories:', getApiUrl(`/api/stores/${resolvedStoreId}/categories`));
         }
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          if (!isActive) return;
+          setCategories([]);
+          setCategoriesError('Log in to load store categories.');
+          return;
+        }
         const data = await getStoreCategories({
           storeId: resolvedStoreId,
+          accessToken,
           signal: abortController.signal,
         });
         if (!isActive) return;
@@ -753,7 +770,7 @@ export default function HomeScreen() {
       isActive = false;
       abortController.abort();
     };
-  }, [resolvedStoreId]);
+  }, [getAccessToken, resolvedStoreId]);
   
   // Fetch products grouped by category
   useEffect(() => {
@@ -784,7 +801,17 @@ export default function HomeScreen() {
         if (__DEV__) {
           console.log('[home] requesting store inventory:', getApiUrl(`/api/stores/${resolvedStoreId}/inventory`));
         }
-        const storeInventory = await getStoreInventory({ storeId: resolvedStoreId });
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          setProducts([]);
+          setCategoryProducts({});
+          setProductsError('Log in to load store inventory.');
+          return;
+        }
+        const storeInventory = await getStoreInventory({
+          storeId: resolvedStoreId,
+          accessToken,
+        });
         const mappedStoreProducts = dedupeProductsById((storeInventory || []).map(mapApiProductToProduct));
         const nextCategoryProducts = buildCategoryProductsMap(mappedStoreProducts, categories);
         setCategoryProducts(nextCategoryProducts);
@@ -800,7 +827,7 @@ export default function HomeScreen() {
     }
 
     loadCategoryProducts();
-  }, [categories, categoriesLoading, resolvedStoreId]);
+  }, [categories, categoriesLoading, getAccessToken, resolvedStoreId]);
   
   // Main search function - similar to Next.js performSearch
   const performSearch = useCallback(async (queryOverride?: string) => {

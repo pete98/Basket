@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { ApiClientError, type ApiError } from './client';
 import { logApiError, logApiRequest, logApiResponse } from './request-logger';
+import { withStoredAccessTokenHeader } from './auth-header';
 import {
   CancelOrderRequest,
   CustomerSubstitutionDecisionRequest,
@@ -80,12 +81,13 @@ async function orderApiRequest<T>(endpoint: string, options: RequestInit = {}): 
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true',
   };
+  const authHeaders = await withStoredAccessTokenHeader(options.headers);
 
   const config: RequestInit = {
     ...options,
     headers: {
       ...defaultHeaders,
-      ...options.headers,
+      ...authHeaders,
     },
   };
 
