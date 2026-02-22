@@ -125,7 +125,7 @@ export default function LoginScreen() {
       } else if (redirect) {
         router.replace({ pathname: redirect, params: redirectParams });
       } else {
-        router.back();
+        router.replace('/(tabs)');
       }
     } catch (error) {
       console.error('Auth0 login failed', error);
@@ -163,13 +163,6 @@ export default function LoginScreen() {
             ) : (
               <Text style={styles.primaryButtonText}>{primaryLabel}</Text>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.skipButton}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-          >
-            <Text style={styles.skipButtonText}>Skip for now</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -223,15 +216,5 @@ export default function LoginScreen() {
       fontSize: 16 * scale,
       fontWeight: '700',
       color: '#fff',
-    },
-    skipButton: {
-      alignItems: 'center',
-      paddingVertical: 8 * scale,
-    },
-    skipButtonText: {
-      fontSize: 14 * scale,
-      fontWeight: '600',
-      color: '#64748b',
-      textDecorationLine: 'underline',
     },
   });

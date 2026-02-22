@@ -291,8 +291,10 @@ export default function DealsScreen() {
 
         {!isLoading && !loadError && dealsLayout && orderedSections.length === 0 && (
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>No promotions configured</Text>
-            <Text style={styles.infoSubtitle}>No deal sections were returned for this store.</Text>
+            <Text style={styles.infoTitle}>No deals right now</Text>
+            <Text style={styles.infoSubtitle}>
+              We could not find any active deals for this store yet. Please check back soon.
+            </Text>
           </View>
         )}
 

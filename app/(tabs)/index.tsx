@@ -16,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Dimensions,
   FlatList,
@@ -419,6 +418,7 @@ export default function HomeScreen() {
   const [selectedQuantity, setSelectedQuantity] = useState(1);
   const [addButtonState, setAddButtonState] = useState<'idle' | 'added'>('idle');
   const addToCartScale = useRef(new Animated.Value(1)).current;
+  const skeletonPulse = useRef(new Animated.Value(0.55)).current;
   const addButtonFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeModalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -444,6 +444,26 @@ export default function HomeScreen() {
       useNativeDriver: false,
     }).start();
   }, [isSearchFocused, searchTransition]);
+
+  useEffect(() => {
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(skeletonPulse, {
+          toValue: 1,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(skeletonPulse, {
+          toValue: 0.55,
+          duration: 700,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    pulseAnimation.start();
+    return () => pulseAnimation.stop();
+  }, [skeletonPulse]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1233,7 +1253,7 @@ export default function HomeScreen() {
                       : 'Log in to search store inventory.')}
                 </ThemedText>
                 {isStoreContextLoading ? (
-                  <ActivityIndicator size="small" color="#4a5568" />
+                  <Animated.View style={[styles.inlineSkeletonPill, { opacity: skeletonPulse }]} />
                 ) : (
                   <TouchableOpacity
                     style={styles.storePromptButton}
@@ -1266,7 +1286,12 @@ export default function HomeScreen() {
               <>
                 {categoriesLoading ? (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color="#4a5568" />
+                    <View style={styles.categoriesSkeletonRow}>
+                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                    </View>
                   </View>
                 ) : categoriesError ? (
                   <View style={styles.errorContainer}>
@@ -1315,7 +1340,12 @@ export default function HomeScreen() {
               ListEmptyComponent={
                 searchLoading ? (
                   <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#4a5568" />
+                    <View style={styles.searchSkeletonGrid}>
+                      <Animated.View style={[styles.searchSkeletonCard, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.searchSkeletonCard, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.searchSkeletonCard, { opacity: skeletonPulse }]} />
+                      <Animated.View style={[styles.searchSkeletonCard, { opacity: skeletonPulse }]} />
+                    </View>
                   </View>
                 ) : searchError ? (
                   <View style={styles.errorContainer}>
@@ -1391,8 +1421,22 @@ export default function HomeScreen() {
         >
           {productsLoading ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#4a5568" />
-              <ThemedText style={styles.loadingText}>Loading products...</ThemedText>
+              <View style={styles.homeSkeletonSection}>
+                <Animated.View style={[styles.homeSkeletonTitle, { opacity: skeletonPulse }]} />
+                <View style={styles.homeSkeletonRow}>
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                </View>
+              </View>
+              <View style={styles.homeSkeletonSection}>
+                <Animated.View style={[styles.homeSkeletonTitleShort, { opacity: skeletonPulse }]} />
+                <View style={styles.homeSkeletonRow}>
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                  <Animated.View style={[styles.homeSkeletonCard, { opacity: skeletonPulse }]} />
+                </View>
+              </View>
             </View>
           ) : productsError ? (
             <View style={styles.errorContainer}>
@@ -2077,15 +2121,71 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  inlineSkeletonPill: {
+    width: 120,
+    height: 34,
+    borderRadius: 999,
+    backgroundColor: '#cbd5e1',
+  },
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#999',
+  categoriesSkeletonRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  categorySkeleton: {
+    width: CATEGORY_CARD_SIZE,
+    height: CATEGORY_CARD_HEIGHT,
+    borderRadius: 14,
+    backgroundColor: '#e2e8f0',
+  },
+  searchSkeletonGrid: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  searchSkeletonCard: {
+    width: '48%',
+    height: 190,
+    borderRadius: 16,
+    backgroundColor: '#e2e8f0',
+  },
+  homeSkeletonSection: {
+    width: '100%',
+    gap: 12,
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  homeSkeletonTitle: {
+    width: 180,
+    height: 18,
+    borderRadius: 8,
+    backgroundColor: '#cbd5e1',
+  },
+  homeSkeletonTitleShort: {
+    width: 130,
+    height: 18,
+    borderRadius: 8,
+    backgroundColor: '#cbd5e1',
+  },
+  homeSkeletonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  homeSkeletonCard: {
+    width: PRODUCT_CARD_WIDTH,
+    height: 190,
+    borderRadius: 16,
+    backgroundColor: '#e2e8f0',
   },
   errorContainer: {
     paddingVertical: 40,

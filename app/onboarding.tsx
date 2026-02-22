@@ -277,7 +277,7 @@ export default function OnboardingScreen() {
         selectLocation(location);
       }
     }
-    router.back();
+    router.replace('/(tabs)');
   };
 
   return (

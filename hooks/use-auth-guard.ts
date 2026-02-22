@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { usePathname, useRouter } from 'expo-router';
-import { useAuth0 } from 'react-native-auth0';
+import { useAuthSession } from '@/hooks/use-auth-session';
 
 type RedirectTarget = {
   pathname: string;
@@ -10,8 +10,7 @@ type RedirectTarget = {
 export function useAuthGuard() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user } = useAuth0();
-  const isLoggedIn = Boolean(user);
+  const { isAuthResolved, isLoggedIn } = useAuthSession();
 
   const openLogin = useCallback(
     (target?: RedirectTarget) => {
@@ -33,12 +32,13 @@ export function useAuthGuard() {
 
   const ensureAuthenticated = useCallback(
     (target?: RedirectTarget) => {
+      if (!isAuthResolved) return false;
       if (isLoggedIn) return true;
       openLogin(target);
       return false;
     },
-    [isLoggedIn, openLogin],
+    [isAuthResolved, isLoggedIn, openLogin],
   );
 
-  return { isLoggedIn, ensureAuthenticated, openLogin };
+  return { isLoggedIn, isAuthResolved, ensureAuthenticated, openLogin };
 }

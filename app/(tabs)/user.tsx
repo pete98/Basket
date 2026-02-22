@@ -170,9 +170,15 @@ export default function UserProfile() {
     } catch (error) {
       console.error('Auth0 logout failed', error);
     } finally {
+      try {
+        await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+      } catch (error) {
+        console.error('Failed to clear local auth token', error);
+      }
+      router.replace('/login');
       setIsProcessing(false);
     }
-  }, [clearSession]);
+  }, [clearSession, router]);
 
   return (
     <View style={styles.container}>
