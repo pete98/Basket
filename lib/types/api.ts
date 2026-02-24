@@ -138,8 +138,9 @@ export type StoreResponse = Store[];
 export interface StoreHomeLayoutSection {
   type: 'hero' | 'category';
   enabled?: boolean;
-  categoryId?: number;
-  title?: string;
+  categoryId?: number | null;
+  title?: string | null;
+  imageLinks?: string[] | null;
 }
 
 export interface StoreHomeLayout {

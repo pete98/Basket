@@ -149,6 +149,18 @@ const heroCards: HeroOfferCard[] = [
   },
 ];
 
+function buildHeroCards(imageLinks: string[], sectionTitle?: string): HeroOfferCard[] {
+  if (imageLinks.length === 0) return heroCards;
+  const normalizedTitle = sanitizeCategoryTitle(sectionTitle?.trim() || 'Top Deals');
+  return imageLinks.map((link, index) => ({
+    id: `hero-${index}`,
+    title: normalizedTitle,
+    value: `Deal ${index + 1}`,
+    detail: 'Limited-time offer',
+    image: { uri: link },
+  }));
+}
+
 function dedupeProductsById(items: UIProduct[]): UIProduct[] {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -175,6 +187,14 @@ function getActiveStoreId(activeStore: unknown): number | null {
   }
 
   return null;
+}
+
+function parseStoreId(locationId: string): number | null {
+  if (!locationId.startsWith('store-')) return null;
+  const rawId = locationId.replace('store-', '');
+  const parsedStoreId = Number.parseInt(rawId, 10);
+  if (Number.isNaN(parsedStoreId)) return null;
+  return parsedStoreId;
 }
 
 function normalizeCategoryValue(value: string): string {
@@ -216,6 +236,13 @@ function coerceNumberArray(values: unknown): number[] {
   return values
     .map((value) => coerceNumber(value))
     .filter((value): value is number => value !== null);
+}
+
+function sanitizeImageLinks(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => value.length > 0);
 }
 
 function buildSyntheticCategory(categoryId: number, title?: string | null): Category {
@@ -272,10 +299,17 @@ function buildCategoryProductsMap(
   return map;
 }
 
-function HeroSection() {
+function HeroSection({
+  imageLinks,
+  title,
+}: {
+  imageLinks: string[];
+  title?: string;
+}) {
   const { width } = useWindowDimensions();
   const heroCardSize = Math.min(220, Math.round(width * 0.52));
   const snapInterval = heroCardSize + 14;
+  const cards = buildHeroCards(imageLinks, title);
 
   return (
     <View style={[styles.heroSection, { minHeight: heroCardSize + 64 }]}>
@@ -284,7 +318,7 @@ function HeroSection() {
         <View style={styles.heroGlowBottom} />
       </View>
       <FlatList
-        data={heroCards}
+        data={cards}
         horizontal
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.id}
@@ -297,13 +331,7 @@ function HeroSection() {
             source={item.image}
             style={[styles.heroCard, { width: heroCardSize, height: heroCardSize }]}
             imageStyle={styles.heroCardImage}
-          >
-            <View style={styles.heroCardOverlay}>
-              <Text style={styles.heroCardTitle}>{item.title}</Text>
-              <Text style={styles.heroCardValue}>{item.value}</Text>
-              <Text style={styles.heroCardDetail}>{item.detail}</Text>
-            </View>
-          </ImageBackground>
+          />
         )}
       />
     </View>
@@ -610,7 +638,8 @@ export default function HomeScreen() {
   const autocompleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autocompleteAbortControllerRef = useRef<AbortController | null>(null);
-  const resolvedStoreId = activeStoreId;
+  const selectedLocationStoreId = parseStoreId(selectedLocation.id);
+  const resolvedStoreId = selectedLocationStoreId ?? activeStoreId;
   const canSearchByStore = resolvedStoreId !== null;
   const getAccessToken = useCallback(async () => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -1031,9 +1060,14 @@ export default function HomeScreen() {
   });
 
   const enabledSections = (homeLayout?.sections || []).filter((section) => section.enabled !== false);
+  const heroSections = enabledSections.filter((section) => section.type === 'hero');
   const heroEnabled = homeLayout
-    ? enabledSections.some((section) => section.type === 'hero')
+    ? heroSections.length > 0
     : true;
+  const heroImageLinks = heroSections.flatMap((section) => sanitizeImageLinks(section.imageLinks));
+  const heroSectionTitle = heroSections
+    .map((section) => section.title?.trim())
+    .find((title): title is string => Boolean(title));
 
   const configuredCategoryEntries: HomeCategoryEntry[] = enabledSections
     .filter((section) => section.type === 'category')
@@ -1445,7 +1479,7 @@ export default function HomeScreen() {
           ) : (
             // Show all product sections when no category is selected
             <>
-              {heroEnabled ? <HeroSection /> : null}
+              {heroEnabled ? <HeroSection imageLinks={heroImageLinks} title={heroSectionTitle} /> : null}
               {homeLayoutError ? (
                 <View style={styles.layoutNoticeContainer}>
                   <ThemedText style={styles.layoutNoticeText}>
@@ -1840,7 +1874,7 @@ const styles = StyleSheet.create({
     position: 'relative',
     marginTop: 0,
     marginBottom: 0,
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
   heroBackdrop: {
     position: 'absolute',
@@ -1875,7 +1909,7 @@ const styles = StyleSheet.create({
     gap: 14,
     paddingTop: 10,
     paddingBottom: 0,
-    paddingHorizontal: 4,
+    paddingHorizontal: 16,
   },
   heroCard: {
     backgroundColor: 'transparent',
