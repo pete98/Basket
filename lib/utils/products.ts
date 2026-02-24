@@ -1,20 +1,67 @@
 import { InventorySearchHit, Product as ApiProduct } from '../types/api';
 import { UIProduct } from '../types/ui';
 
+const WEIGHT_UNIT_LABELS: Record<string, string> = {
+  G: 'g',
+  GRAM: 'g',
+  GRAMS: 'g',
+  KG: 'kg',
+  KILOGRAM: 'kg',
+  KILOGRAMS: 'kg',
+  OZ: 'oz',
+  OUNCE: 'oz',
+  OUNCES: 'oz',
+  FL_OZ: 'oz',
+  FLOZ: 'oz',
+  FLUID_OUNCE: 'oz',
+  FLUID_OUNCES: 'oz',
+  LB: 'lb',
+  LBS: 'lb',
+  POUND: 'lb',
+  POUNDS: 'lb',
+  ML: 'ml',
+  MILLILITER: 'ml',
+  MILLILITERS: 'ml',
+  L: 'L',
+  LITER: 'L',
+  LITERS: 'L',
+  EA: 'ea',
+  EACH: 'ea',
+  UNIT: 'ea',
+  CT: 'ct',
+  COUNT: 'ct',
+  PC: 'pc',
+  PCS: 'pc',
+  PIECE: 'pc',
+  PIECES: 'pc',
+  PK: 'pk',
+  PACK: 'pk',
+};
+
+function formatWeightUnitLabel(weightUnit?: string): string {
+  if (!weightUnit) return '';
+
+  const normalizedUnit = weightUnit
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '_')
+    .replace(/-/g, '_');
+
+  const mappedUnit = WEIGHT_UNIT_LABELS[normalizedUnit];
+  if (mappedUnit) return mappedUnit;
+
+  return weightUnit
+    .trim()
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase();
+}
+
 export function formatWeight(weight?: number, weightUnit?: string): string {
   if (!weight) return '';
 
-  const unit = weightUnit?.toUpperCase();
-  if (unit === 'GRAM') {
-    return `${weight}g`;
-  }
-  if (unit === 'OZ') {
-    return `${weight}oz`;
-  }
-  if (weightUnit) {
-    return `${weight} ${weightUnit.toLowerCase()}`;
-  }
-  return weight.toString();
+  const unitLabel = formatWeightUnitLabel(weightUnit);
+  if (!unitLabel) return weight.toString();
+  return `${weight} ${unitLabel}`;
 }
 
 export function mapApiProductToProduct(apiProduct: ApiProduct): UIProduct {

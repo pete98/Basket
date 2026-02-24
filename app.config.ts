@@ -38,6 +38,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     process.env.EXPO_PUBLIC_STRIPE_PAYMENT_SHEET_PATH ||
     process.env.STRIPE_PAYMENT_SHEET_PATH ||
     '/payments/intents';
+  const cancelPaymentPath =
+    process.env.EXPO_PUBLIC_STRIPE_CANCEL_PAYMENT_PATH ||
+    process.env.STRIPE_CANCEL_PAYMENT_PATH ||
+    '/payments/cancel-payment';
   const inventoryServiceBaseUrl =
     process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
     process.env.INVENTORY_BASE_URL ||
@@ -115,6 +119,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       stripeMerchantId,
       stripeUrlScheme,
       paymentSheetPath,
+      cancelPaymentPath,
       inventoryServiceBaseUrl,
       userServiceBaseUrl,
     },

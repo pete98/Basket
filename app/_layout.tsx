@@ -77,6 +77,7 @@ function AppStack() {
       <Stack.Screen name="delivery-address" options={{ headerShown: false }} />
       <Stack.Screen name="ai-modal" options={{ presentation: 'transparentModal', headerShown: false }} />
       <Stack.Screen name="category-products" options={{ headerShown: false }} />
+      <Stack.Screen name="subcategory-products" options={{ headerShown: false }} />
       <Stack.Screen
         name="modal"
         options={{

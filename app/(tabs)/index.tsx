@@ -1,20 +1,27 @@
 import { ProductCard } from '@/components/product-card';
+import { ProductDetailSheet } from '@/components/product-detail-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { useLocation } from '@/contexts/location-context';
-import { useCart } from '@/contexts/cart-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { AGENT_EVENTS, agentBus, SelectCategoryPayload } from '@/lib/agent-bus';
 import { getApiUrl, getInventoryServiceBaseUrl } from '@/lib/api/client';
 import { getAutocompleteSuggestions, searchProducts } from '@/lib/api/search';
-import { getStoreCategories, getStoreHomeLayout, getStoreInventory } from '@/lib/api/stores';
+import {
+  getStoreCategories,
+  getStoreById,
+  getStoreHomeLayout,
+  getStoreInventory,
+} from '@/lib/api/stores';
 import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
 import { Category, StoreHomeLayout } from '@/lib/types/api';
 import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
-import { formatWeight, mapApiProductToProduct, mapSearchHitToProduct } from '@/lib/utils/products';
+import { mapApiProductToProduct, mapSearchHitToProduct } from '@/lib/utils/products';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import * as SecureStore from 'expo-secure-store';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -22,21 +29,21 @@ import {
   Image,
   ImageBackground,
   ImageSourcePropType,
-  Modal,
+  LayoutAnimation,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   useWindowDimensions,
   View
 } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
 import { useAuth0 } from 'react-native-auth0';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Calculate category card width: (screen width - glass margins - glass padding - gaps) / cards per row
@@ -44,8 +51,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // Compact design: smaller square/circular cards for horizontal scroll
 const CATEGORY_CARD_SIZE = 64; // Compact square cards
 const CATEGORY_CARD_HEIGHT = 64;
-// Product card width for horizontal lists - shows ~2.5 cards at once
-const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 24) / 2.5; // Screen width - padding (16*2) - gaps (12*2) / 2.5 cards
+// Product card width for horizontal lists - shows ~2.25 cards at once
+const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 24) / 2.25; // Screen width - padding (16*2) - gaps (12*2) / 2.25 cards
 const BACK_BUTTON_SIZE = 54;
 
 // Default category display order for home page
@@ -312,7 +319,7 @@ function HeroSection({
   const cards = buildHeroCards(imageLinks, title);
 
   return (
-    <View style={[styles.heroSection, { minHeight: heroCardSize + 64 }]}>
+    <View style={[styles.heroSection, { minHeight: heroCardSize + 40 }]}>
       <View style={[styles.heroBackdrop, { height: heroCardSize + 92 }]}>
         <View style={styles.heroGlowTop} />
         <View style={styles.heroGlowBottom} />
@@ -430,25 +437,22 @@ export default function HomeScreen() {
   const { selectedLocation } = useLocation();
   const { isLoggedIn, openLogin } = useAuthGuard();
   const { getCredentials } = useAuth0();
-  const { addItem, updateQuantity, state } = useCart();
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [isCategoriesExpanded, setIsCategoriesExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchTransition = useRef(new Animated.Value(0)).current;
+  const categoryExpandProgress = useRef(new Animated.Value(0)).current;
   const BACK_BUTTON_SIZE = 54;
   const [categorySectionHeight, setCategorySectionHeight] = useState(0);
   const [isCategoryHidden, setIsCategoryHidden] = useState(false);
   const scrollOffsetRef = useRef(0);
-  const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
-  const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
-  const [selectedQuantity, setSelectedQuantity] = useState(1);
-  const [addButtonState, setAddButtonState] = useState<'idle' | 'added'>('idle');
-  const addToCartScale = useRef(new Animated.Value(1)).current;
   const skeletonPulse = useRef(new Animated.Value(0.55)).current;
-  const addButtonFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeModalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInlineCategoriesVisible =
+    isCategoriesExpanded &&
+    !isSearchFocused &&
+    searchQuery.trim().length === 0;
 
   const handleContentScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -472,6 +476,19 @@ export default function HomeScreen() {
       useNativeDriver: false,
     }).start();
   }, [isSearchFocused, searchTransition]);
+
+  useEffect(() => {
+    Animated.timing(categoryExpandProgress, {
+      toValue: isInlineCategoriesVisible ? 1 : 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  }, [categoryExpandProgress, isInlineCategoriesVisible]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    UIManager.setLayoutAnimationEnabledExperimental?.(true);
+  }, []);
 
   useEffect(() => {
     const pulseAnimation = Animated.loop(
@@ -499,117 +516,19 @@ export default function HomeScreen() {
     }, [])
   );
 
-  function openProductModal(product: UIProduct) {
-    const cartItem = state.items.find((item) => item.id === product.id);
-    if (addButtonFeedbackTimer.current) {
-      clearTimeout(addButtonFeedbackTimer.current);
-    }
-    if (closeModalTimer.current) {
-      clearTimeout(closeModalTimer.current);
-    }
-    setSelectedProduct(product);
-    setSelectedQuantity(cartItem?.quantity || 1);
-    setIsDescriptionOpen(false);
-    setAddButtonState('idle');
-    addToCartScale.setValue(1);
-    setIsProductModalVisible(true);
-  }
-
-  function closeProductModal() {
-    setIsProductModalVisible(false);
-    setSelectedProduct(null);
-    setIsDescriptionOpen(false);
-  }
-
-  function handleIncrement() {
-    setSelectedQuantity((prev) => prev + 1);
-  }
-
-  function handleDecrement() {
-    setSelectedQuantity((prev) => (prev > 1 ? prev - 1 : 1));
-  }
-
-  function handleAddToCart() {
-    if (!selectedProduct) return;
-    const desiredQuantity = Math.max(selectedQuantity, 1);
-    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
-    const quantity = cartItem?.quantity || 0;
-    const selectedProductPrice =
-      typeof selectedProduct.price === 'number' && Number.isFinite(selectedProduct.price)
-        ? selectedProduct.price
-        : 0;
-
-    if (quantity === 0) {
-      addItem({
-        id: selectedProduct.id,
-        name: selectedProduct.name,
-        price: selectedProductPrice,
-        image: selectedProduct.image || '',
-      });
-      if (desiredQuantity > 1) {
-        updateQuantity(selectedProduct.id, desiredQuantity);
-      }
-      return;
-    }
-
-    updateQuantity(selectedProduct.id, desiredQuantity);
-  }
-
-  function handleAddToCartPress() {
-    handleAddToCart();
-    setAddButtonState('added');
-
-    if (addButtonFeedbackTimer.current) {
-      clearTimeout(addButtonFeedbackTimer.current);
-    }
-    addButtonFeedbackTimer.current = setTimeout(() => {
-      setAddButtonState('idle');
-    }, 1200);
-
-    if (closeModalTimer.current) {
-      clearTimeout(closeModalTimer.current);
-    }
-    closeModalTimer.current = setTimeout(() => {
-      closeProductModal();
-    }, 700);
-
-    Animated.sequence([
-      Animated.timing(addToCartScale, {
-        toValue: 0.95,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(addToCartScale, {
-        toValue: 1.05,
-        friction: 4,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(addToCartScale, {
-        toValue: 1,
-        friction: 5,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }
-
-  useEffect(() => {
-    if (!selectedProduct) return;
-    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
-    setSelectedQuantity(cartItem?.quantity || 1);
-  }, [selectedProduct, state.items]);
-
-  useEffect(() => {
-    return () => {
-      if (addButtonFeedbackTimer.current) {
-        clearTimeout(addButtonFeedbackTimer.current);
-      }
-      if (closeModalTimer.current) {
-        clearTimeout(closeModalTimer.current);
-      }
-    };
+  const toggleCategories = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsCategoryHidden(false);
+    setIsCategoriesExpanded((prev) => !prev);
   }, []);
+
+  function openProductModal(product: UIProduct) {
+    setSelectedProduct(product);
+  }
+
+  function handleProductSheetDismiss() {
+    setSelectedProduct(null);
+  }
   
   // API state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -624,6 +543,7 @@ export default function HomeScreen() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [autocompleteLoading, setAutocompleteLoading] = useState(false);
   const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
+  const [resolvedStoreName, setResolvedStoreName] = useState('');
   const [isStoreContextLoading, setIsStoreContextLoading] = useState(false);
   const [storeContextError, setStoreContextError] = useState<string | null>(null);
   const [homeLayout, setHomeLayout] = useState<StoreHomeLayout | null>(null);
@@ -641,6 +561,18 @@ export default function HomeScreen() {
   const selectedLocationStoreId = parseStoreId(selectedLocation.id);
   const resolvedStoreId = selectedLocationStoreId ?? activeStoreId;
   const canSearchByStore = resolvedStoreId !== null;
+  const savedStoreName = useMemo(() => {
+    const locationLabel = selectedLocation.label.trim();
+    if (selectedLocationStoreId !== null && locationLabel.length > 0) return locationLabel;
+    const fallbackStoreName = resolvedStoreName.trim();
+    if (fallbackStoreName.length > 0) return fallbackStoreName;
+    return '';
+  }, [resolvedStoreName, selectedLocation.label, selectedLocationStoreId]);
+  const searchPlaceholder = !canSearchByStore
+    ? 'Select store to search'
+    : savedStoreName.length > 0
+      ? `Search ${savedStoreName}...`
+      : 'Search store';
   const getAccessToken = useCallback(async () => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
     if (accessToken) return accessToken;
@@ -767,6 +699,46 @@ export default function HomeScreen() {
       abortController.abort();
     };
   }, [getAccessToken, resolvedStoreId]);
+
+  useEffect(() => {
+    if (resolvedStoreId === null) {
+      setResolvedStoreName('');
+      return;
+    }
+
+    const locationLabel = selectedLocation.label.trim();
+    if (selectedLocationStoreId !== null && locationLabel.length > 0) {
+      setResolvedStoreName(locationLabel);
+      return;
+    }
+
+    let isActive = true;
+    const abortController = new AbortController();
+
+    async function loadResolvedStoreName() {
+      try {
+        const accessToken = await getAccessToken();
+        const store = await getStoreById({
+          storeId: resolvedStoreId,
+          accessToken: accessToken ?? undefined,
+          signal: abortController.signal,
+        });
+        if (!isActive) return;
+        setResolvedStoreName(store.displayName?.trim() || '');
+      } catch (error) {
+        if (!isActive) return;
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setResolvedStoreName('');
+      }
+    }
+
+    void loadResolvedStoreName();
+
+    return () => {
+      isActive = false;
+      abortController.abort();
+    };
+  }, [getAccessToken, resolvedStoreId, selectedLocation.label, selectedLocationStoreId]);
   
   // Fetch store categories only (no master categories)
   useEffect(() => {
@@ -887,12 +859,21 @@ export default function HomeScreen() {
       return;
     }
 
+    const queryToUse = (queryOverride !== undefined ? queryOverride : searchQuery).trim();
+    if (!queryToUse) {
+      if (selectedCategoryId !== null) {
+        setSearchResults(categoryProducts[selectedCategoryId] || []);
+        setSearchError(null);
+        return;
+      }
+      setSearchResults([]);
+      setSearchError(null);
+      return;
+    }
+
     try {
       setSearchLoading(true);
       setSearchError(null);
-
-      // Use provided query or fall back to current searchQuery state
-      const queryToUse = queryOverride !== undefined ? queryOverride : searchQuery.trim();
       
       // Build category array from selected category
       const categoryArray: string[] = [];
@@ -905,7 +886,7 @@ export default function HomeScreen() {
 
       const searchParams = {
         storeId: resolvedStoreId,
-        query: queryToUse || "*",
+        query: queryToUse,
         category: categoryArray.length > 0 ? categoryArray : undefined,
         page: 1,
         pageSize: 24,
@@ -921,7 +902,7 @@ export default function HomeScreen() {
     } finally {
       setSearchLoading(false);
     }
-  }, [resolvedStoreId, searchQuery, selectedCategoryId, categories]);
+  }, [resolvedStoreId, searchQuery, selectedCategoryId, categories, categoryProducts]);
 
   // Perform search when category filter changes (automatic trigger)
   useEffect(() => {
@@ -1120,31 +1101,19 @@ export default function HomeScreen() {
     return unsubscribe;
   }, [categories, openCategoryProducts]);
 
-  const handleCategorySectionLayout = (event: any) => {
+  const handleCategorySectionLayout = useCallback((event: any) => {
+    if (isInlineCategoriesVisible) return;
     const { height } = event.nativeEvent.layout;
-    if (height > 0) {
-      setCategorySectionHeight(height);
-    }
-  };
+    if (height <= 0) return;
+    setCategorySectionHeight((previousHeight) => {
+      if (previousHeight > 0 && height > previousHeight) return previousHeight;
+      return height;
+    });
+  }, [isInlineCategoriesVisible]);
 
   const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 60;
-  const contentTopInset = 8;
+  const contentTopInset = 0;
   const contentBottomInset = insets.bottom + 24;
-  const formattedWeight = selectedProduct ? formatWeight(selectedProduct.weight, selectedProduct.weightUnit) : '';
-  const weightCaloriesText =
-    formattedWeight && selectedProduct?.calories
-      ? `${formattedWeight} • ${selectedProduct.calories} cals`
-      : formattedWeight
-        ? formattedWeight
-        : selectedProduct?.calories
-          ? `${selectedProduct.calories} cals`
-          : '';
-  const normalizedName = selectedProduct?.name?.toLowerCase() ?? '';
-  const quantityLabel = normalizedName.includes('avocado') ? 'avocado' : 'item';
-  const selectedProductPrice =
-    selectedProduct && typeof selectedProduct.price === 'number' && Number.isFinite(selectedProduct.price)
-      ? selectedProduct.price
-      : 0;
 
   return (
     <View style={styles.container}>
@@ -1197,64 +1166,121 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </Animated.View>
               <View style={styles.searchPillContainer}>
-                <View style={styles.searchInputWrapper}>
-                  {!isSearchFocused && searchQuery.trim().length === 0 && (
-                    <Ionicons name="search-outline" size={20} color="#666" />
-                  )}
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder={canSearchByStore ? "Search products" : "Select store to search"}
-                    placeholderTextColor="#0f172a"
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    onFocus={() => {
-                      if (!canSearchByStore) return;
-                      setIsSearchFocused(true);
-                      setSearchResults([]);
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => setIsSearchFocused(false), 200);
-                    }}
-                    onSubmitEditing={() => {
-                      handleSearchSubmit();
-                      setIsSearchFocused(false);
-                    }}
-                    returnKeyType="search"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={canSearchByStore}
-                  />
-                  {searchQuery.length > 0 && (
-                    <TouchableOpacity
-                      onPress={() => {
-                        setSearchQuery('');
+                <View style={styles.searchBarRow}>
+                  <View style={styles.searchInputWrapper}>
+                    {!isSearchFocused && searchQuery.trim().length === 0 && (
+                      <Ionicons name="search-outline" size={20} color="#666" />
+                    )}
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder={searchPlaceholder}
+                      placeholderTextColor="#0f172a"
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      onFocus={() => {
+                        if (!canSearchByStore) return;
+                        setIsSearchFocused(true);
                         setSearchResults([]);
-                        setAutocompleteSuggestions([]);
                       }}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      style={styles.clearButton}
-                    >
-                      <Ionicons name="close-circle" size={22} color="#666" />
-                    </TouchableOpacity>
-                  )}
-                </View>
+                      onBlur={() => {
+                        setTimeout(() => setIsSearchFocused(false), 200);
+                      }}
+                      onSubmitEditing={() => {
+                        handleSearchSubmit();
+                        setIsSearchFocused(false);
+                      }}
+                      returnKeyType="search"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      editable={canSearchByStore}
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setSearchQuery('');
+                          setSearchResults([]);
+                          setAutocompleteSuggestions([]);
+                        }}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        style={styles.clearButton}
+                      >
+                        <Ionicons name="close-circle" size={22} color="#666" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
-                {!isSearchFocused && (
-                  <>
+                  {!isSearchFocused && (
                     <TouchableOpacity
-                      onPress={() => setIsCategoriesExpanded(!isCategoriesExpanded)}
+                      onPress={toggleCategories}
                       style={styles.expandToggleButton}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       activeOpacity={0.6}
                     >
-                      <Ionicons
-                        name={isCategoriesExpanded ? "grid-outline" : "apps-outline"}
-                        size={18}
-                        color="#fff"
-                      />
+                      <Animated.View
+                        style={{
+                          transform: [
+                            {
+                              rotate: categoryExpandProgress.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: ['0deg', '180deg'],
+                              }),
+                            },
+                          ],
+                        }}
+                      >
+                        <Ionicons name="chevron-down" size={18} color="#fff" />
+                      </Animated.View>
                     </TouchableOpacity>
-                  </>
-                )}
+                  )}
+                </View>
+
+                <Animated.View
+                  style={[
+                    styles.inlineCategoriesContainer,
+                    {
+                      maxHeight: categoryExpandProgress.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 280],
+                      }),
+                      opacity: categoryExpandProgress,
+                      transform: [
+                        {
+                          translateY: categoryExpandProgress.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [-8, 0],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                  pointerEvents={isInlineCategoriesVisible ? 'auto' : 'none'}
+                >
+                  {categoriesLoading ? (
+                    <View style={styles.loadingContainer}>
+                      <View style={styles.categoriesSkeletonRow}>
+                        <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                        <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                        <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                        <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
+                      </View>
+                    </View>
+                  ) : categoriesError ? (
+                    <View style={styles.errorContainer}>
+                      <ThemedText style={styles.errorText}>{categoriesError}</ThemedText>
+                    </View>
+                  ) : (
+                    <View style={styles.categoriesGridContainer}>
+                      {toggleCategoriesFromStore.length > 0 && toggleCategoriesFromStore.map((category) => (
+                        <CategoryCard
+                          key={category.id}
+                          category={category}
+                          isSelected={selectedCategoryId === category.id}
+                          onPress={() => handleCategoryPress(category.id)}
+                        />
+                      ))}
+                    </View>
+                  )}
+                </Animated.View>
               </View>
             </View>
             {/* Autocomplete Suggestions - Only show when search bar is focused */}
@@ -1277,75 +1303,8 @@ export default function HomeScreen() {
                 ))}
               </View>
             )}
-            {!canSearchByStore && (
-              <View style={styles.storePromptContainer}>
-                <ThemedText style={styles.storePromptText}>
-                  {isStoreContextLoading
-                    ? 'Loading your active store...'
-                    : storeContextError || (isLoggedIn
-                      ? 'Select a store to search products.'
-                      : 'Log in to search store inventory.')}
-                </ThemedText>
-                {isStoreContextLoading ? (
-                  <Animated.View style={[styles.inlineSkeletonPill, { opacity: skeletonPulse }]} />
-                ) : (
-                  <TouchableOpacity
-                    style={styles.storePromptButton}
-                    onPress={() => {
-                      if (isLoggedIn) {
-                        router.push('/find-store');
-                        return;
-                      }
-                      openLogin({ pathname: '/' });
-                    }}
-                    accessibilityRole="button"
-                    activeOpacity={0.85}
-                  >
-                    <ThemedText style={styles.storePromptButtonText}>
-                      {isLoggedIn ? 'Select store' : 'Log in'}
-                    </ThemedText>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
           </View>
 
-          <View
-            style={[
-              styles.categoriesWrapper,
-              (isCategoryHidden || isSearchFocused || searchQuery.trim().length > 0) && styles.categoriesWrapperHidden,
-            ]}
-          >
-            {!isSearchFocused && searchQuery.trim().length === 0 && (
-              <>
-                {categoriesLoading ? (
-                  <View style={styles.loadingContainer}>
-                    <View style={styles.categoriesSkeletonRow}>
-                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
-                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
-                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
-                      <Animated.View style={[styles.categorySkeleton, { opacity: skeletonPulse }]} />
-                    </View>
-                  </View>
-                ) : categoriesError ? (
-                  <View style={styles.errorContainer}>
-                    <ThemedText style={styles.errorText}>{categoriesError}</ThemedText>
-                  </View>
-                ) : isCategoriesExpanded ? (
-                  <View style={styles.categoriesGridContainer}>
-                    {toggleCategoriesFromStore.length > 0 && toggleCategoriesFromStore.map((category) => (
-                      <CategoryCard
-                        key={category.id}
-                        category={category}
-                        isSelected={selectedCategoryId === category.id}
-                        onPress={() => handleCategoryPress(category.id)}
-                      />
-                    ))}
-                  </View>
-                ) : null}
-              </>
-            )}
-          </View>
         </View>
       </View>
 
@@ -1516,120 +1475,12 @@ export default function HomeScreen() {
         </ScrollView>
       )}
 
-      <Modal
-        visible={isProductModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={closeProductModal}
-      >
-        <View style={[styles.modalOverlay, { paddingTop: insets.top }]}>
-          <View style={[styles.modalCard, { paddingTop: 12 }]}>
-            <View style={styles.modalHeader}>
-              <TouchableOpacity
-                style={styles.modalCloseButton}
-                onPress={closeProductModal}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="close" size={22} color="#111322" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={styles.modalScroll}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              <View style={styles.modalHeroCard}>
-                <View style={styles.modalHeroImageWrapper}>
-                  {selectedProduct?.image ? (
-                    <Image
-                      source={{ uri: selectedProduct.image }}
-                      style={styles.modalHeroImage}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <View style={styles.modalImagePlaceholder}>
-                      <Ionicons name="image-outline" size={72} color="#CED2DA" />
-                    </View>
-                  )}
-                </View>
-              </View>
-
-              <View style={styles.modalMeta}>
-                <ThemedText style={styles.modalTitle}>
-                  {selectedProduct?.name || 'Product'}
-                </ThemedText>
-                <Text style={styles.modalSubtitle}>
-                  {weightCaloriesText || `1 ${quantityLabel}`}
-                </Text>
-
-                <View style={styles.modalPriceRow}>
-                  <Text style={styles.modalSalePrice}>
-                    ${selectedProductPrice.toFixed(2)}
-                  </Text>
-                  {selectedProduct ? (
-                    <Text style={styles.modalOriginalPrice}>
-                      ${(selectedProductPrice * 1.13).toFixed(2)}
-                    </Text>
-                  ) : null}
-                </View>
-
-                <View style={styles.modalDetailBlock}>
-                  <TouchableOpacity
-                    style={styles.modalAccordionHeader}
-                    onPress={() => setIsDescriptionOpen((prev) => !prev)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.modalAccordionTitle}>Product detail</Text>
-                    <Ionicons
-                      name={isDescriptionOpen ? 'chevron-up' : 'chevron-down'}
-                      size={20}
-                      color="#111322"
-                    />
-                  </TouchableOpacity>
-                  {isDescriptionOpen ? (
-                    <Text style={styles.modalDescription}>
-                      {selectedProduct?.description || 'No description available.'}
-                    </Text>
-                  ) : null}
-                </View>
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <View style={styles.stepper}>
-                <TouchableOpacity
-                  style={styles.stepperButton}
-                  onPress={handleDecrement}
-                  disabled={selectedQuantity <= 1}
-                >
-                  <Text style={[styles.stepperButtonText, selectedQuantity <= 1 && styles.disabledText]}>
-                    -
-                  </Text>
-                </TouchableOpacity>
-                <Text style={styles.quantityText}>{selectedQuantity}</Text>
-                <TouchableOpacity
-                  style={styles.stepperButton}
-                  onPress={handleIncrement}
-                >
-                  <Text style={styles.stepperButtonText}>+</Text>
-                </TouchableOpacity>
-              </View>
-              <Animated.View style={[styles.cartButtonWrapper, { transform: [{ scale: addToCartScale }] }]}>
-                <TouchableOpacity
-                  style={styles.cartButton}
-                  onPress={handleAddToCartPress}
-                  activeOpacity={0.9}
-                >
-                  <Text style={styles.cartButtonText}>
-                    {addButtonState === 'added' ? 'Item added!' : 'Add to Cart'}
-                  </Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <ProductDetailSheet
+        product={selectedProduct}
+        storeId={resolvedStoreId}
+        getAccessToken={getAccessToken}
+        onDismiss={handleProductSheetDismiss}
+      />
     </View>
   );
 }
@@ -1643,18 +1494,16 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#f97316',
+    backgroundColor: 'transparent',
     zIndex: 1000,
-    paddingHorizontal: 8,
-    paddingBottom: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ea580c',
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
   categoryContent: {
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 6,
-    gap: 8,
+    paddingHorizontal: 18,
+    paddingTop: 2,
+    paddingBottom: 0,
+    gap: 0,
   },
   topControlsRow: {
     flexDirection: 'row',
@@ -1671,20 +1520,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 8,
   },
-  categoriesWrapper: {
-    overflow: 'hidden',
-  },
-  categoriesWrapperHidden: {
-    maxHeight: 0,
-    opacity: 0,
-    overflow: 'hidden',
-  },
   categoriesGridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 8,
-    marginBottom: 8,
+    marginTop: 0,
+    marginBottom: 0,
     marginLeft: 0,
   },
   scrollView: {
@@ -1694,27 +1535,24 @@ const styles = StyleSheet.create({
   scrollContent: {
     // Content flows naturally with category section at top
   },
-  modalOverlay: {
+  bottomSheetContent: {
     flex: 1,
-    justifyContent: 'flex-start',
-    backgroundColor: '#6B6B6B',
-  },
-  modalCard: {
-    height: '100%',
+    minHeight: 320,
     marginHorizontal: 0,
     marginTop: 0,
     marginBottom: 0,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
   },
-  modalHeader: {
-    alignItems: 'flex-end',
-    paddingHorizontal: 16,
-    paddingBottom: 6,
+  sheetCloseOverlay: {
+    position: 'absolute',
+    top: 10,
+    right: 14,
+    zIndex: 10,
   },
   modalCloseButton: {
     width: 36,
@@ -1722,16 +1560,18 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
   modalScroll: {
     flex: 1,
   },
   modalScrollContent: {
-    paddingBottom: 24,
+    paddingTop: 44,
+    paddingBottom: 20,
   },
   modalHeroCard: {
     marginHorizontal: 24,
-    marginTop: 6,
+    marginTop: 30,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     overflow: 'hidden',
@@ -1754,7 +1594,21 @@ const styles = StyleSheet.create({
   },
   modalMeta: {
     paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+  },
+  modalPromoTag: {
+    alignSelf: 'flex-start',
+    maxWidth: '70%',
+    borderRadius: 8,
+    backgroundColor: '#16A34A',
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginBottom: 10,
+    textTransform: 'uppercase',
   },
   modalTitle: {
     fontSize: 24,
@@ -1809,8 +1663,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 28,
+    paddingBottom: 12,
+    gap: 12,
     backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F6',
   },
   stepper: {
     flexDirection: 'row',
@@ -1844,7 +1701,6 @@ const styles = StyleSheet.create({
   },
   cartButton: {
     flex: 1,
-    marginLeft: 12,
     backgroundColor: '#0DB44D',
     borderRadius: 32,
     alignItems: 'center',
@@ -1859,6 +1715,9 @@ const styles = StyleSheet.create({
   cartButtonWrapper: {
     flex: 1,
   },
+  quantitySection: {
+    alignItems: 'flex-start',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1872,7 +1731,7 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     position: 'relative',
-    marginTop: 0,
+    marginTop: 8,
     marginBottom: 0,
     paddingHorizontal: 0,
   },
@@ -1907,7 +1766,7 @@ const styles = StyleSheet.create({
   },
   heroCardsRow: {
     gap: 14,
-    paddingTop: 10,
+    paddingTop: 0,
     paddingBottom: 0,
     paddingHorizontal: 16,
   },
@@ -1916,11 +1775,6 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     padding: 14,
     borderWidth: 0,
-    shadowColor: '#9a3412',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 3,
   },
   heroCardImage: {
     borderRadius: 22,
@@ -1977,7 +1831,7 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   searchPill: {
-    marginBottom: 4,
+    marginBottom: 10,
     overflow: 'hidden',
     width: '100%',
   },
@@ -1993,16 +1847,28 @@ const styles = StyleSheet.create({
   },
   searchPillContainer: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    height: 54,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: 0,
+    minHeight: 54,
     paddingHorizontal: 10,
+    paddingBottom: 0,
     borderRadius: 26,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#fff',
     overflow: 'hidden',
+  },
+  searchBarRow: {
+    height: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inlineCategoriesContainer: {
+    overflow: 'hidden',
+    paddingTop: 0,
+    paddingBottom: 4,
   },
   searchInputWrapper: {
     flex: 1,
@@ -2064,7 +1930,7 @@ const styles = StyleSheet.create({
     color: '#667085',
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 38,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -2087,6 +1953,7 @@ const styles = StyleSheet.create({
     color: '#4a5568',
     fontSize: 14,
     fontWeight: '600',
+    marginRight: 6,
   },
   productList: {
     paddingHorizontal: 8,

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native';
@@ -15,9 +15,14 @@ import { type Href, useRouter } from 'expo-router';
 import { useAuth0 } from 'react-native-auth0';
 import { isAuth0Configured } from '@/lib/config/auth0';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
+import { useLocation } from '@/contexts/location-context';
 import { getStoreById } from '@/lib/api/stores';
 import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
 import * as SecureStore from 'expo-secure-store';
+import { CustomerSheet, CustomerSheetError } from '@stripe/stripe-react-native';
+import { createStripeCustomerSession, createStripeSetupIntent } from '@/lib/api/payments';
+import { ApiClientError } from '@/lib/api/client';
+import { stripeConfig } from '@/lib/config/stripe';
 
 interface ProfileAction {
   title: string;
@@ -35,10 +40,18 @@ const accountActions: ProfileAction[] = [
     tint: '#EDF6FF',
   },
   {
-    title: 'Security',
-    description: 'Password & sign-in options',
-    icon: 'shield-checkmark-outline',
+    title: 'Order History',
+    description: 'Track or reorder past items',
+    icon: 'time-outline',
+    tint: '#E9F2FF',
+    route: '/order-history',
+  },
+  {
+    title: 'Address',
+    description: 'Manage your delivery address',
+    icon: 'location-outline',
     tint: '#FFF6ED',
+    route: '/delivery-address',
   },
 ];
 
@@ -49,30 +62,45 @@ const supportOptions: ProfileAction[] = [
     icon: 'chatbubbles-outline',
     tint: '#E8FBF1',
   },
-  {
-    title: 'Order History',
-    description: 'Track or reorder past items',
-    icon: 'time-outline',
-    tint: '#E9F2FF',
-    route: '/order-history',
-  },
 ];
 
 export default function UserProfile() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [pushEnabled, setPushEnabled] = useState(true);
-  const [promoEnabled, setPromoEnabled] = useState(false);
   const { clearSession, user, isLoading, getCredentials } = useAuth0();
-  const { isLoggedIn, openLogin } = useAuthGuard();
+  const { isLoggedIn, ensureAuthenticated, openLogin } = useAuthGuard();
+  const { selectedLocation } = useLocation();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isManagingPaymentMethods, setIsManagingPaymentMethods] = useState(false);
+  const [paymentMethodDescription, setPaymentMethodDescription] = useState('Manage saved cards');
   const [savedStoreTitle, setSavedStoreTitle] = useState('No store selected');
   const [savedStoreSubtitle, setSavedStoreSubtitle] = useState(
     'Select a store to enable store-specific inventory and search.'
   );
   const [isStoreLoading, setIsStoreLoading] = useState(false);
   const configReady = isAuth0Configured;
+  const isCustomerSheetConfigured = Boolean(
+    stripeConfig.publishableKey &&
+      stripeConfig.customerSessionUrl &&
+      stripeConfig.customerSetupIntentUrl
+  );
   const ACCESS_TOKEN_KEY = 'auth0_access_token';
+
+  function buildStripeReturnUrl(): string | undefined {
+    if (!stripeConfig.urlScheme) return undefined;
+    return `${stripeConfig.urlScheme}://stripe-redirect`;
+  }
+
+  function isMissingCustomerSessionRoute(error: unknown): boolean {
+    if (!(error instanceof ApiClientError)) return false;
+    const normalized = error.message.toLowerCase();
+    return (
+      error.status === 404 ||
+      normalized.includes('no static resource stripe/customers/customer-session') ||
+      normalized.includes('customer-session') ||
+      normalized.includes('not found')
+    );
+  }
 
   function getActiveStoreId(activeStore: unknown): number | null {
     if (!activeStore || typeof activeStore !== 'object') return null;
@@ -88,6 +116,22 @@ export default function UserProfile() {
       if (!Number.isNaN(parsedId)) return parsedId;
     }
     return null;
+  }
+
+  function getSavedStoreErrorMessage(error: unknown): string {
+    if (!(error instanceof ApiClientError)) {
+      return 'Unable to load active store right now. Please try again.';
+    }
+
+    if (error.status === 401) {
+      return 'Your session expired. Please log in again.';
+    }
+
+    if (error.status === 404) {
+      return 'No store selected yet. Choose a store to personalize Home and Search.';
+    }
+
+    return 'Unable to load active store right now. Please try again.';
   }
 
   useEffect(() => {
@@ -145,7 +189,7 @@ export default function UserProfile() {
       } catch (error) {
         if (!isActive) return;
         setSavedStoreTitle('No store selected');
-        setSavedStoreSubtitle(error instanceof Error ? error.message : 'Unable to load active store.');
+        setSavedStoreSubtitle(getSavedStoreErrorMessage(error));
       } finally {
         if (!isActive) return;
         setIsStoreLoading(false);
@@ -157,7 +201,7 @@ export default function UserProfile() {
     return () => {
       isActive = false;
     };
-  }, [getCredentials, isLoggedIn]);
+  }, [getCredentials, isLoggedIn, selectedLocation.id]);
 
   const handleLogin = useCallback(() => {
     openLogin({ pathname: '/user' });
@@ -179,6 +223,86 @@ export default function UserProfile() {
       setIsProcessing(false);
     }
   }, [clearSession, router]);
+
+  const handlePaymentMethodsPress = useCallback(async () => {
+    const canProceed = ensureAuthenticated({ pathname: '/user' });
+    if (!canProceed) return;
+    if (!isCustomerSheetConfigured) {
+      Alert.alert('Payments unavailable', 'Stripe is not configured for this app.');
+      return;
+    }
+
+    setIsManagingPaymentMethods(true);
+    try {
+      let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
+      if (!accessToken) {
+        const credentials = await getCredentials();
+        accessToken = credentials?.accessToken ?? null;
+        if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
+      }
+
+      if (!accessToken) {
+        Alert.alert('Session expired', 'Please log in again to manage payment methods.');
+        return;
+      }
+
+      const { error: initError } = await CustomerSheet.initialize({
+        intentConfiguration: {
+          paymentMethodTypes: ['card'],
+        },
+        clientSecretProvider: {
+          provideCustomerSessionClientSecret: async () => {
+            const response = await createStripeCustomerSession();
+            return {
+              customerId: response.customerId,
+              clientSecret: response.customerSessionClientSecret,
+            };
+          },
+          provideSetupIntentClientSecret: async () => {
+            const response = await createStripeSetupIntent();
+            return response.setupIntentClientSecret;
+          },
+        },
+        headerTextForSelectionScreen: 'Manage your payment method',
+        returnURL: buildStripeReturnUrl(),
+      });
+
+      if (initError) {
+        Alert.alert('Unable to open payment methods', initError.localizedMessage || initError.message);
+        return;
+      }
+
+      // Stop row spinner once initialization is complete; the native sheet is about to open.
+      setIsManagingPaymentMethods(false);
+      const { error, paymentOption } = await CustomerSheet.present();
+      if (error) {
+        if (error.code === CustomerSheetError.Canceled) return;
+        Alert.alert('Payment methods error', error.localizedMessage || error.message);
+        return;
+      }
+
+      if (paymentOption?.label) setPaymentMethodDescription(paymentOption.label);
+    } catch (error) {
+      if (isMissingCustomerSessionRoute(error)) {
+        Alert.alert(
+          'Payment methods unavailable',
+          'Customer session endpoint is not available on this backend. Please contact support.'
+        );
+        return;
+      }
+      if (error instanceof ApiClientError) {
+        Alert.alert('Payment methods error', error.message);
+        return;
+      }
+      if (error instanceof Error) {
+        Alert.alert('Payment methods error', error.message);
+        return;
+      }
+      Alert.alert('Payment methods error', 'Unable to manage payment methods right now.');
+    } finally {
+      setIsManagingPaymentMethods(false);
+    }
+  }, [ensureAuthenticated, getCredentials, isCustomerSheetConfigured]);
 
   return (
     <View style={styles.container}>
@@ -214,17 +338,6 @@ export default function UserProfile() {
             <Text style={styles.email}>
               {user?.email ?? 'Log in to personalize your account.'}
             </Text>
-            {isLoggedIn && (
-              <View style={styles.badge}>
-                <Ionicons
-                  name="star"
-                  size={14}
-                  color="#FFB100"
-                  style={styles.badgeIcon}
-                />
-                <Text style={styles.badgeText}>Premium member</Text>
-              </View>
-            )}
           </View>
           {isLoggedIn && (
             <Pressable style={styles.editButton}>
@@ -301,51 +414,34 @@ export default function UserProfile() {
                   pressed && styles.rowPressed,
                 ]}
                 onPress={() => {
+                  if (item.title === 'Payment Methods') {
+                    void handlePaymentMethodsPress();
+                    return;
+                  }
                   if (item.route) {
                     router.push(item.route);
                   }
                 }}
+                disabled={item.title === 'Payment Methods' && isManagingPaymentMethods}
               >
                 <View style={[styles.iconBadge, { backgroundColor: item.tint }]}>
                   <Ionicons name={item.icon as any} size={18} color="#1C1C1E" />
                 </View>
                 <View style={styles.rowContent}>
                   <Text style={styles.rowTitle}>{item.title}</Text>
-                  <Text style={styles.rowSubtitle}>{item.description}</Text>
+                  <Text style={styles.rowSubtitle}>
+                    {item.title === 'Payment Methods'
+                      ? paymentMethodDescription
+                      : item.description}
+                  </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+                {item.title === 'Payment Methods' && isManagingPaymentMethods ? (
+                  <ActivityIndicator size="small" color="#B0B3C1" />
+                ) : (
+                  <Ionicons name="chevron-forward" size={18} color="#B0B3C1" />
+                )}
               </Pressable>
             ))}
-          </View>
-        )}
-
-        {isLoggedIn && (
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Preferences</Text>
-            <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
-              <View>
-                <Text style={styles.rowTitle}>Push Notifications</Text>
-                <Text style={styles.rowSubtitle}>Updates for deliveries</Text>
-              </View>
-              <Switch
-                value={pushEnabled}
-                onValueChange={setPushEnabled}
-                thumbColor={pushEnabled ? '#fff' : '#f4f4f5'}
-                trackColor={{ false: '#d4d7e1', true: '#4CAF50' }}
-              />
-            </View>
-            <View style={[styles.preferenceRow, styles.preferenceSpacing]}>
-              <View>
-                <Text style={styles.rowTitle}>Promotions</Text>
-                <Text style={styles.rowSubtitle}>Personalized deals & tips</Text>
-              </View>
-              <Switch
-                value={promoEnabled}
-                onValueChange={setPromoEnabled}
-                thumbColor={promoEnabled ? '#fff' : '#f4f4f5'}
-                trackColor={{ false: '#d4d7e1', true: '#FF7849' }}
-              />
-            </View>
           </View>
         )}
 

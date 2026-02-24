@@ -3,8 +3,9 @@ import { useCheckout } from '@/contexts/checkout-context';
 import { useLocation } from '@/contexts/location-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { createDeliveryQuote, createOrder } from '@/lib/api/orders';
-import { createPaymentIntent } from '@/lib/api/payments';
+import { cancelPaymentIntent, createPaymentIntent } from '@/lib/api/payments';
 import { getStoreById } from '@/lib/api/stores';
+import { ORDER_EVENTS, orderBus } from '@/lib/order-bus';
 import { getActiveStore, getUserByAuth0, type UserProfileResponse } from '@/lib/api/users';
 import { isStripeConfigured, stripeConfig } from '@/lib/config/stripe';
 import type { CreateOrderRequest, DeliveryAddress, DeliveryContact, Order } from '@/lib/types/orders';
@@ -606,6 +607,8 @@ export default function OrderSummaryScreen() {
       const { error: initError } = await initPaymentSheet({
         merchantDisplayName: storeProfile?.displayName ?? 'Basket',
         paymentIntentClientSecret: paymentIntentData.clientSecret,
+        customerId: paymentIntentData.customerId,
+        customerEphemeralKeySecret: paymentIntentData.ephemeralKeySecret,
         returnURL: stripeReturnUrl ?? undefined,
         allowsDelayedPaymentMethods: false,
         defaultBillingDetails: {
@@ -622,12 +625,29 @@ export default function OrderSummaryScreen() {
 
       const { error: presentError } = await presentPaymentSheet();
       if (presentError) {
+        if (
+          presentError.code?.toLowerCase() === 'canceled' &&
+          paymentIntentData.paymentIntentId
+        ) {
+          try {
+            await cancelPaymentIntent({
+              payload: { paymentIntentId: paymentIntentData.paymentIntentId },
+              accessToken,
+            });
+          } catch (cancelError) {
+            console.warn(
+              '[OrderSummary] Failed to cancel payment intent after sheet dismissal',
+              cancelError
+            );
+          }
+        }
         setPlaceOrderError(presentError.message);
         return;
       }
 
       clearCart();
       resetCheckout();
+      orderBus.emit(ORDER_EVENTS.OrderPlaced, { orderId: order.orderId });
       router.replace('/order-history');
     } catch (error) {
       setPlaceOrderError(error instanceof Error ? error.message : 'Unable to place order.');

@@ -20,10 +20,10 @@ export default function TabLayout() {
     <View style={styles.root}>
       <NativeTabs backgroundColor="#0f172a"
   tintColor="#f97316"
-  iconColor={{ default: '#94a3b8', selected: '#f97316' }}
+  iconColor={{ default: '#94a3b8', selected: 'black' }}
   labelStyle={{
     default: { color: '#94a3b8', fontSize: 10 },
-    selected: { color: '#f97316', fontWeight: '600' },
+    selected: { color: 'black', fontWeight: '600' },
   }}
   >
 

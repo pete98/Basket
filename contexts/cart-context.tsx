@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, useReducer, ReactNode } from 'react';
 import { CartItem } from '@/lib/types/cart';
 
 interface CartState {
@@ -15,6 +15,7 @@ type CartAction =
 
 interface CartContextType {
   state: CartState;
+  itemsById: Map<string, CartItem>;
   addItem: (item: Omit<CartItem, 'quantity'>) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
@@ -106,6 +107,10 @@ const initialState: CartState = {
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(cartReducer, initialState);
+  const itemsById = useMemo(
+    () => new Map(state.items.map((item) => [item.id, item])),
+    [state.items],
+  );
 
   const addItem = (item: Omit<CartItem, 'quantity'>) => {
     dispatch({ type: 'ADD_ITEM', payload: item });
@@ -124,7 +129,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <CartContext.Provider value={{ state, addItem, removeItem, updateQuantity, clearCart }}>
+    <CartContext.Provider value={{ state, itemsById, addItem, removeItem, updateQuantity, clearCart }}>
       {children}
     </CartContext.Provider>
   );
@@ -137,7 +142,6 @@ export function useCart() {
   }
   return context;
 }
-
 
 
 

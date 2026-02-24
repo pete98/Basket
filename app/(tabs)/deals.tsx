@@ -1,15 +1,16 @@
-import { useLocation } from '@/contexts/location-context';
 import { ProductCard } from '@/components/product-card';
+import { ProductDetailSheet } from '@/components/product-detail-sheet';
 import { ThemedText } from '@/components/themed-text';
+import { useLocation } from '@/contexts/location-context';
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { getDealsSections } from '@/lib/api/promotions';
-import type { UIProduct } from '@/lib/types/ui';
 import { getActiveStore, getUserByAuth0 } from '@/lib/api/users';
 import type {
   DealSection,
   DealSectionProductSnapshot,
   DealsSectionsResponse,
 } from '@/lib/types/promotions';
+import type { UIProduct } from '@/lib/types/ui';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -27,7 +28,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 20) / 2.9;
+const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 24) / 2.25;
 
 function parseStoreId(locationId: string): number | null {
   if (!locationId.startsWith('store-')) return null;
@@ -68,6 +69,7 @@ function toUIProduct(product: DealSectionProductSnapshot, section: DealSection):
       typeof product.originalPrice === 'number' && Number.isFinite(product.originalPrice)
         ? product.originalPrice
         : undefined,
+    promoTag: product.discountLabel || undefined,
     image: product.imageUrl || '',
     category: product.category || section.title,
     inStock: true,
@@ -75,7 +77,13 @@ function toUIProduct(product: DealSectionProductSnapshot, section: DealSection):
   };
 }
 
-function DealSectionCard({ section }: { section: DealSection }) {
+function DealSectionCard({
+  section,
+  onProductPress,
+}: {
+  section: DealSection;
+  onProductPress: (product: UIProduct) => void;
+}) {
   const products = section.products.map((product) => ({
     snapshot: product,
     uiProduct: toUIProduct(product, section),
@@ -106,16 +114,7 @@ function DealSectionCard({ section }: { section: DealSection }) {
               key={`${section.promotionId}-${item.snapshot.productId}-${index}`}
               style={styles.productCardWrapper}
             >
-              <ProductCard product={item.uiProduct} showPrice={false} showBorder={false} />
-              <View style={styles.dealPriceRow}>
-                <Text style={styles.dealPromoPrice}>${item.uiProduct.price.toFixed(2)}</Text>
-                {typeof item.snapshot.originalPrice === 'number' && (
-                  <Text style={styles.dealOriginalPrice}>${item.snapshot.originalPrice.toFixed(2)}</Text>
-                )}
-              </View>
-              {!!item.snapshot.discountLabel && (
-                <Text style={styles.dealDiscountLabel}>{item.snapshot.discountLabel}</Text>
-              )}
+              <ProductCard product={item.uiProduct} onPress={onProductPress} />
             </View>
           ))}
         </ScrollView>
@@ -132,11 +131,12 @@ export default function DealsScreen() {
 
   const [activeStoreId, setActiveStoreId] = useState<number | null>(null);
   const [dealsLayout, setDealsLayout] = useState<DealsSectionsResponse | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const resolvedStoreId = useMemo(
-    () => activeStoreId ?? parseStoreId(selectedLocation.id),
+    () => parseStoreId(selectedLocation.id) ?? activeStoreId,
     [activeStoreId, selectedLocation.id]
   );
 
@@ -304,10 +304,16 @@ export default function DealsScreen() {
             keyExtractor={(item, index) => `${item.promotionId}-${index}`}
             contentContainerStyle={styles.sectionsList}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => <DealSectionCard section={item} />}
+            renderItem={({ item }) => <DealSectionCard section={item} onProductPress={setSelectedProduct} />}
           />
         )}
       </View>
+      <ProductDetailSheet
+        product={selectedProduct}
+        storeId={resolvedStoreId}
+        getAccessToken={getAccessToken}
+        onDismiss={() => setSelectedProduct(null)}
+      />
     </View>
   );
 }
@@ -428,41 +434,9 @@ const styles = StyleSheet.create({
   productList: {
     paddingHorizontal: 0,
     paddingBottom: 2,
-    gap: 6,
+    gap: 12,
   },
   productCardWrapper: {
     width: PRODUCT_CARD_WIDTH,
-    borderWidth: 1,
-    borderColor: '#E4E7EC',
-    borderRadius: 10,
-    padding: 6,
-    backgroundColor: '#fff',
-  },
-  dealPriceRow: {
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#E4E7EC',
-    paddingTop: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 2,
-  },
-  dealPromoPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111322',
-  },
-  dealOriginalPrice: {
-    fontSize: 11,
-    color: '#98A2B3',
-    textDecorationLine: 'line-through',
-  },
-  dealDiscountLabel: {
-    marginTop: 2,
-    paddingHorizontal: 2,
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#047857',
   },
 });

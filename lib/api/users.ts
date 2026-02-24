@@ -129,13 +129,13 @@ async function userApiRequest<T>(endpoint: string, options: RequestInit = {}) {
     });
 
     if (!response.ok) {
-      const defaultMessage = `API request failed with status ${response.status} (${url})`;
+      const defaultMessage = `API request failed with status ${response.status}`;
       let message = defaultMessage;
       try {
         const errorData = await response.json();
         const serverMessage = errorData.error?.message || errorData.message;
         if (serverMessage) {
-          message = `${serverMessage} (${url})`;
+          message = serverMessage;
         }
       } catch {
         // ignore parse errors

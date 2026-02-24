@@ -16,6 +16,9 @@ interface PaymentIntentApiResponse {
   amount: number;
   currency: string;
   status: string;
+  customerId: string;
+  ephemeralKeySecret: string;
+  publishableKey: string;
 }
 
 export interface CreatePaymentIntentResponse {
@@ -26,6 +29,9 @@ export interface CreatePaymentIntentResponse {
   amount: number;
   currency: string;
   status: string;
+  customerId: string;
+  ephemeralKeySecret: string;
+  publishableKey: string;
 }
 
 export interface CreatePaymentIntentParams {
@@ -33,6 +39,85 @@ export interface CreatePaymentIntentParams {
   accessToken: string;
   storeId: number | string;
   signal?: AbortSignal;
+}
+
+export interface CancelPaymentIntentRequest {
+  paymentIntentId: string;
+}
+
+export interface CancelPaymentIntentResponse {
+  success: boolean;
+  status: string | null;
+  message: string | null;
+  error: string | null;
+}
+
+export interface CancelPaymentIntentParams {
+  payload: CancelPaymentIntentRequest;
+  accessToken: string;
+  signal?: AbortSignal;
+}
+
+interface CreateCustomerSessionApiResponse {
+  customer: string;
+  customerSessionClientSecret: string;
+}
+
+export interface CreateCustomerSessionResponse {
+  customerId: string;
+  customerSessionClientSecret: string;
+}
+
+interface CreateSetupIntentApiResponse {
+  setupIntent: string;
+}
+
+export interface CreateSetupIntentResponse {
+  setupIntentClientSecret: string;
+}
+
+function formatPaymentApiErrorMessage(status: number, rawBody: string): string {
+  const fallback = `API request failed with status ${status}`;
+  if (!rawBody) return fallback;
+
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      error?: { message?: string };
+      message?: string;
+      details?: unknown;
+    };
+    const message = parsed.error?.message || parsed.message;
+    if (!message) return `${fallback}: ${rawBody}`;
+    if (!parsed.details) return message;
+    return `${message} (${JSON.stringify(parsed.details)})`;
+  } catch {
+    return `${fallback}: ${rawBody}`;
+  }
+}
+
+function isRouteMissingError(error: unknown): boolean {
+  if (!(error instanceof ApiClientError)) return false;
+  if (error.status === 404) return true;
+  const message = error.message.toLowerCase();
+  return message.includes('no static resource') || message.includes('not found');
+}
+
+function buildCancelPaymentFallbackUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname;
+    if (path.includes('/api/cancel-payment')) {
+      parsed.pathname = path.replace('/api/cancel-payment', '/cancel-payment');
+      return parsed.toString();
+    }
+    if (path.includes('/cancel-payment')) {
+      parsed.pathname = path.replace('/cancel-payment', '/api/cancel-payment');
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function paymentApiRequest<T>(url: string, options: RequestInit = {}): Promise<T> {
@@ -69,13 +154,8 @@ async function paymentApiRequest<T>(url: string, options: RequestInit = {}): Pro
       durationMs: Date.now() - requestStartedAt,
     });
     if (!response.ok) {
-      let message = `API request failed with status ${response.status}`;
-      try {
-        const errorData = await response.json();
-        message = errorData.error?.message || errorData.message || message;
-      } catch {
-        // ignore parse errors
-      }
+      const rawBody = await response.text();
+      const message = formatPaymentApiErrorMessage(response.status, rawBody);
       throw new ApiClientError(message, response.status);
     }
 
@@ -130,5 +210,77 @@ export async function createPaymentIntent(
     amount: response.amount,
     currency: response.currency,
     status: response.status,
+    customerId: response.customerId,
+    ephemeralKeySecret: response.ephemeralKeySecret,
+    publishableKey: response.publishableKey,
+  };
+}
+
+export async function cancelPaymentIntent(
+  params: CancelPaymentIntentParams
+): Promise<CancelPaymentIntentResponse> {
+  const paymentIntentId = params.payload.paymentIntentId.trim();
+  if (!paymentIntentId) throw new ApiClientError('Missing payment intent id for cancellation.');
+
+  const request: RequestInit = {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+    body: JSON.stringify({ paymentIntentId }),
+    signal: params.signal,
+  };
+
+  try {
+    return await paymentApiRequest<CancelPaymentIntentResponse>(stripeConfig.cancelPaymentUrl, request);
+  } catch (error) {
+    if (!isRouteMissingError(error)) throw error;
+    const fallbackUrl = buildCancelPaymentFallbackUrl(stripeConfig.cancelPaymentUrl);
+    if (!fallbackUrl || fallbackUrl === stripeConfig.cancelPaymentUrl) throw error;
+    return paymentApiRequest<CancelPaymentIntentResponse>(fallbackUrl, request);
+  }
+}
+
+export async function createStripeCustomerSession(
+  signal?: AbortSignal
+): Promise<CreateCustomerSessionResponse> {
+  const response = await paymentApiRequest<CreateCustomerSessionApiResponse>(
+    stripeConfig.customerSessionUrl,
+    {
+      method: 'POST',
+      signal,
+    }
+  );
+
+  if (!response.customer?.trim()) {
+    throw new ApiClientError('Customer session response is missing customer id.');
+  }
+  if (!response.customerSessionClientSecret?.trim()) {
+    throw new ApiClientError('Customer session response is missing client secret.');
+  }
+
+  return {
+    customerId: response.customer,
+    customerSessionClientSecret: response.customerSessionClientSecret,
+  };
+}
+
+export async function createStripeSetupIntent(
+  signal?: AbortSignal
+): Promise<CreateSetupIntentResponse> {
+  const response = await paymentApiRequest<CreateSetupIntentApiResponse>(
+    stripeConfig.customerSetupIntentUrl,
+    {
+      method: 'POST',
+      signal,
+    }
+  );
+
+  if (!response.setupIntent?.trim()) {
+    throw new ApiClientError('Setup intent response is missing client secret.');
+  }
+
+  return {
+    setupIntentClientSecret: response.setupIntent,
   };
 }

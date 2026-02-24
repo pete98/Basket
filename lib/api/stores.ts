@@ -1,5 +1,5 @@
 import { apiRequest } from './client';
-import { Category, Product, Store, StoreHomeLayout, StoreResponse } from '../types/api';
+import { Category, Product, Store, StoreHomeLayout, StoreResponse, Subcategory } from '../types/api';
 
 export interface GetStoresByZipParams {
   zip: string;
@@ -70,8 +70,43 @@ export async function getStoreInventory(params: GetStoreInventoryParams): Promis
   });
 }
 
+export interface GetStoreInventoryItemByIdParams {
+  storeId: number;
+  id: number;
+  accessToken?: string;
+  signal?: AbortSignal;
+  includePromotionOverlay?: boolean;
+}
+
+export async function getStoreInventoryItemById(
+  params: GetStoreInventoryItemByIdParams
+): Promise<Product> {
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+  const queryParams = new URLSearchParams();
+  if (typeof params.includePromotionOverlay === 'boolean') {
+    queryParams.set('includePromotionOverlay', params.includePromotionOverlay ? 'true' : 'false');
+  }
+  const queryString = queryParams.toString();
+
+  return apiRequest<Product>(
+    `/api/stores/${params.storeId}/inventory/${params.id}${queryString ? `?${queryString}` : ''}`,
+    {
+      headers,
+      signal: params.signal,
+    }
+  );
+}
+
 export interface GetStoreCategoriesParams {
   storeId: number;
+  accessToken?: string;
+  signal?: AbortSignal;
+}
+
+export interface GetSubcategoriesByCategoryCodeParams {
+  categoryCode: string;
   accessToken?: string;
   signal?: AbortSignal;
 }
@@ -121,6 +156,38 @@ function normalizeStoreCategory(raw: unknown): Category | null {
   };
 }
 
+function normalizeStoreSubcategory(raw: unknown): Subcategory | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const data = raw as Record<string, unknown>;
+
+  const code =
+    coerceString(data.code) ??
+    coerceString(data.subCategoryCode) ??
+    coerceString(data.subcategoryCode);
+  if (!code) return null;
+
+  const displayName =
+    coerceString(data.displayName) ??
+    coerceString(data.subCategoryDisplayName) ??
+    coerceString(data.subcategoryDisplayName) ??
+    coerceString(data.name) ??
+    code;
+
+  return {
+    id: coerceNumber(data.id) ?? coerceNumber(data.subCategoryId) ?? undefined,
+    code,
+    displayName,
+    categoryCode:
+      coerceString(data.categoryCode) ??
+      coerceString(data.parentCategoryCode) ??
+      undefined,
+    description: coerceString(data.description) ?? undefined,
+    createdAt: coerceString(data.createdAt) ?? undefined,
+    updatedAt: coerceString(data.updatedAt) ?? undefined,
+    displayOrder: coerceNumber(data.displayOrder) ?? undefined,
+  };
+}
+
 export async function getStoreCategories(params: GetStoreCategoriesParams): Promise<Category[]> {
   const headers: HeadersInit | undefined = params.accessToken
     ? { Authorization: `Bearer ${params.accessToken}` }
@@ -150,4 +217,41 @@ export async function getStoreCategories(params: GetStoreCategoriesParams): Prom
   });
 
   return Array.from(dedupedById.values());
+}
+
+export async function getSubcategoriesByCategoryCode(
+  params: GetSubcategoriesByCategoryCodeParams
+): Promise<Subcategory[]> {
+  const categoryCode = params.categoryCode.trim();
+  if (!categoryCode) return [];
+
+  const headers: HeadersInit | undefined = params.accessToken
+    ? { Authorization: `Bearer ${params.accessToken}` }
+    : undefined;
+
+  const queryParams = new URLSearchParams({ categoryCode });
+  const response = await apiRequest<Subcategory[] | { data?: Subcategory[] }>(
+    `/api/subcategories?${queryParams.toString()}`,
+    {
+      headers,
+      signal: params.signal,
+    }
+  );
+
+  const source = Array.isArray(response)
+    ? response
+    : response && typeof response === 'object' && 'data' in response && Array.isArray(response.data)
+      ? response.data
+      : [];
+
+  const normalized = source
+    .map((item) => normalizeStoreSubcategory(item))
+    .filter((item): item is Subcategory => item !== null);
+
+  const dedupedByCode = new Map<string, Subcategory>();
+  normalized.forEach((subcategory) => {
+    dedupedByCode.set(subcategory.code.trim().toLowerCase(), subcategory);
+  });
+
+  return Array.from(dedupedByCode.values());
 }

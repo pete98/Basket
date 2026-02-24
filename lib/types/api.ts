@@ -10,6 +10,17 @@ export interface Category {
   icon?: string; // Optional icon/emoji for the category
 }
 
+export interface Subcategory {
+  id?: number;
+  code: string;
+  displayName: string;
+  categoryCode?: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  displayOrder?: number;
+}
+
 // API returns array directly, not wrapped in data/meta
 export type CategoryResponse = Category[];
 

@@ -1,14 +1,17 @@
 import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { getUserOrders } from '@/lib/api/orders';
+import { ORDER_EVENTS, orderBus } from '@/lib/order-bus';
 import { getUserByAuth0 } from '@/lib/api/users';
 import { type PaymentCollectionStatus, type StoreOrderSummary, type StoreReviewStatus } from '@/lib/types/orders';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, FlatList, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth0 } from 'react-native-auth0';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
+const ORDERS_POLLING_INTERVAL_MS = 30_000;
 
 function formatPickupWindow(start: string, end: string): string {
   const startDate = new Date(start);
@@ -54,15 +57,56 @@ function canTrackDelivery(order: StoreOrderSummary): boolean {
   );
 }
 
+function mergeOrderStatuses(
+  currentOrders: StoreOrderSummary[],
+  incomingOrders: StoreOrderSummary[]
+): StoreOrderSummary[] {
+  if (currentOrders.length === 0) return incomingOrders;
+
+  const incomingById = new Map(incomingOrders.map((order) => [order.orderId, order]));
+  const seenIds = new Set<string>();
+
+  const updatedCurrent = currentOrders.map((order) => {
+    const incoming = incomingById.get(order.orderId);
+    if (!incoming) return order;
+    seenIds.add(order.orderId);
+
+    const hasStatusChanged =
+      order.status !== incoming.status ||
+      order.storeReviewStatus !== incoming.storeReviewStatus ||
+      order.paymentCollectionStatus !== incoming.paymentCollectionStatus ||
+      order.pendingSubstitutionCount !== incoming.pendingSubstitutionCount ||
+      order.deliveryTrackingUrl !== incoming.deliveryTrackingUrl;
+
+    if (!hasStatusChanged) return order;
+
+    return {
+      ...order,
+      status: incoming.status,
+      storeReviewStatus: incoming.storeReviewStatus,
+      paymentCollectionStatus: incoming.paymentCollectionStatus,
+      pendingSubstitutionCount: incoming.pendingSubstitutionCount,
+      deliveryTrackingUrl: incoming.deliveryTrackingUrl,
+    };
+  });
+
+  const newOrders = incomingOrders.filter((order) => !seenIds.has(order.orderId));
+  if (newOrders.length === 0) return updatedCurrent;
+  return [...newOrders, ...updatedCurrent];
+}
+
 export default function OrderHistoryScreen() {
   const insets = useSafeAreaInsets();
   const { isLoggedIn, openLogin } = useAuthGuard();
+  const isFocused = useIsFocused();
   const { getCredentials } = useAuth0();
   const [orders, setOrders] = useState<StoreOrderSummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [resolvedUserId, setResolvedUserId] = useState<number | null>(null);
   const [resolvedAccessToken, setResolvedAccessToken] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
 
   const getAccessToken = useCallback(async () => {
     let accessToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
@@ -107,43 +151,82 @@ export default function OrderHistoryScreen() {
     };
   }, [getAccessToken, isLoggedIn]);
 
-  useEffect(() => {
-    if (!isLoggedIn) {
+  const loadOrders = useCallback(async (options?: { silent?: boolean }) => {
+    const isSilent = options?.silent ?? false;
+    if (isFetchingRef.current) return;
+
+    if (!isLoggedIn || !resolvedUserId || !resolvedAccessToken) {
       setOrders([]);
       setLoadError(null);
       setIsLoading(false);
+      hasLoadedOnceRef.current = false;
       return;
     }
-    if (!resolvedUserId || !resolvedAccessToken) {
-      setOrders([]);
+
+    isFetchingRef.current = true;
+    if (!isSilent && !hasLoadedOnceRef.current) setIsLoading(true);
+    if (!isSilent) setLoadError(null);
+
+    try {
+      const data = await getUserOrders({ userId: resolvedUserId, accessToken: resolvedAccessToken });
+      setOrders((currentOrders) => (isSilent ? mergeOrderStatuses(currentOrders, data) : data));
       setLoadError(null);
-      setIsLoading(false);
-      return;
-    }
-
-    let isActive = true;
-    setIsLoading(true);
-    setLoadError(null);
-
-    getUserOrders({ userId: resolvedUserId, accessToken: resolvedAccessToken })
-      .then((data) => {
-        if (!isActive) return;
-        setOrders(data);
-      })
-      .catch((error) => {
-        if (!isActive) return;
+      hasLoadedOnceRef.current = true;
+    } catch (error) {
+      if (!isSilent) {
         setOrders([]);
         setLoadError(error instanceof Error ? error.message : 'Unable to load order history.');
-      })
-      .finally(() => {
-        if (!isActive) return;
-        setIsLoading(false);
-      });
+      }
+    } finally {
+      isFetchingRef.current = false;
+      if (!isSilent) setIsLoading(false);
+    }
+  }, [isLoggedIn, resolvedAccessToken, resolvedUserId]);
+
+  useEffect(() => {
+    void loadOrders();
+  }, [loadOrders]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadOrders({ silent: true });
+    }, [loadOrders])
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState !== 'active') return;
+      if (!isFocused) return;
+      void loadOrders({ silent: true });
+    });
 
     return () => {
-      isActive = false;
+      subscription.remove();
     };
-  }, [isLoggedIn, resolvedAccessToken, resolvedUserId]);
+  }, [isFocused, loadOrders]);
+
+  useEffect(() => {
+    const unsubscribe = orderBus.on(ORDER_EVENTS.OrderPlaced, () => {
+      void loadOrders({ silent: true });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [loadOrders]);
+
+  useEffect(() => {
+    if (!isFocused) return;
+    if (!isLoggedIn || !resolvedUserId || !resolvedAccessToken) return;
+
+    const pollingId = setInterval(() => {
+      void loadOrders({ silent: true });
+    }, ORDERS_POLLING_INTERVAL_MS);
+
+    return () => {
+      clearInterval(pollingId);
+    };
+  }, [isFocused, isLoggedIn, loadOrders, resolvedAccessToken, resolvedUserId]);
 
   async function handleTrackDelivery(url: string) {
     try {
