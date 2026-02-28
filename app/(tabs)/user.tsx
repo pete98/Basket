@@ -61,6 +61,7 @@ const supportOptions: ProfileAction[] = [
     description: 'FAQs and live chat',
     icon: 'chatbubbles-outline',
     tint: '#E8FBF1',
+    route: '/help',
   },
 ];
 

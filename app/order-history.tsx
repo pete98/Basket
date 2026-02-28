@@ -3,6 +3,7 @@ import { getUserOrders } from '@/lib/api/orders';
 import { ORDER_EVENTS, orderBus } from '@/lib/order-bus';
 import { getUserByAuth0 } from '@/lib/api/users';
 import { type PaymentCollectionStatus, type StoreOrderSummary, type StoreReviewStatus } from '@/lib/types/orders';
+import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -97,6 +98,7 @@ function mergeOrderStatuses(
 
 export default function OrderHistoryScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { isLoggedIn, openLogin } = useAuthGuard();
   const isFocused = useIsFocused();
   const { getCredentials } = useAuth0();
@@ -285,7 +287,12 @@ export default function OrderHistoryScreen() {
             keyExtractor={(item) => item.orderId}
             contentContainerStyle={styles.orderList}
             renderItem={({ item }) => (
-              <View style={styles.orderCard}>
+              <Pressable
+                style={styles.orderCard}
+                onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.orderId } })}
+                accessibilityRole="button"
+                accessibilityLabel={`Open details for order ${item.orderId}`}
+              >
                 <View style={styles.orderHeader}>
                   <Text style={styles.orderId}>Order {item.orderId}</Text>
                   <View style={styles.statusPill}>
@@ -309,13 +316,16 @@ export default function OrderHistoryScreen() {
                 {canTrackDelivery(item) ? (
                   <Pressable
                     style={styles.trackButton}
-                    onPress={() => handleTrackDelivery(item.deliveryTrackingUrl!.trim())}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      void handleTrackDelivery(item.deliveryTrackingUrl!.trim());
+                    }}
                   >
                     <Text style={styles.trackButtonText}>Track Delivery</Text>
                   </Pressable>
                 ) : null}
                 <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
-              </View>
+              </Pressable>
             )}
             showsVerticalScrollIndicator={false}
           />

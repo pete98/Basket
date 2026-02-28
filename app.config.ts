@@ -50,6 +50,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     process.env.EXPO_PUBLIC_USER_SERVICE_BASE_URL ||
     process.env.USER_SERVICE_BASE_URL ||
     'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
+  const supportServiceBaseUrl =
+    process.env.EXPO_PUBLIC_SUPPORT_SERVICE_BASE_URL ||
+    process.env.SUPPORT_SERVICE_BASE_URL ||
+    'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
 
   return {
     ...config,
@@ -122,6 +126,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       cancelPaymentPath,
       inventoryServiceBaseUrl,
       userServiceBaseUrl,
+      supportServiceBaseUrl,
     },
   };
 };
