@@ -16,13 +16,21 @@ interface SupportExtra {
 }
 
 const extra = (Constants.expoConfig?.extra ?? {}) as SupportExtra;
-const SUPPORT_API_BASE_URL =
+const RAW_SUPPORT_API_BASE_URL =
   extra.supportServiceBaseUrl ||
   process.env.SUPPORT_API_BASE_URL ||
   process.env.EXPO_PUBLIC_SUPPORT_SERVICE_BASE_URL ||
   extra.inventoryServiceBaseUrl ||
   process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
   "https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app";
+
+function normalizeSupportApiBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/api")) return trimmed;
+  return `${trimmed}/api`;
+}
+
+const SUPPORT_API_BASE_URL = normalizeSupportApiBaseUrl(RAW_SUPPORT_API_BASE_URL);
 
 class SupportApiError extends Error {
   status?: number;
@@ -35,7 +43,8 @@ class SupportApiError extends Error {
 }
 
 function buildUrl(path: string): string {
-  return `${SUPPORT_API_BASE_URL}${path}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${SUPPORT_API_BASE_URL}${normalizedPath}`;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

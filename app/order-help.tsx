@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { StatusBar } from "expo-status-bar";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -16,28 +17,16 @@ interface HelpOption {
 
 const HELP_OPTIONS: HelpOption[] = [
   {
-    id: "track",
-    title: "Track order status",
-    subtitle: "See latest status updates and ETA.",
-    icon: "navigate-outline",
-  },
-  {
     id: "issue",
     title: "Issue with this order",
     subtitle: "Report missing, wrong, or damaged items.",
     icon: "alert-circle-outline",
   },
   {
-    id: "refund",
-    title: "Refund and payments",
-    subtitle: "Get help with charges, refunds, or payment issues.",
-    icon: "card-outline",
-  },
-  {
-    id: "delivery",
-    title: "Delivery instructions",
-    subtitle: "Update handoff preferences and delivery notes.",
-    icon: "location-outline",
+    id: "cancel",
+    title: "Cancel order",
+    subtitle: "Request cancellation for this order.",
+    icon: "close-circle-outline",
   },
 ];
 
@@ -65,6 +54,7 @@ export default function OrderHelpScreen() {
 
   return (
     <View style={styles.container}>
+      <StatusBar style="light" backgroundColor="#f97316" />
       <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
         <Pressable
           accessibilityRole="button"
@@ -72,7 +62,7 @@ export default function OrderHelpScreen() {
           onPress={() => router.back()}
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={20} color="#0f172a" />
+          <Ionicons name="arrow-back" size={20} color="#fff" />
         </Pressable>
         <Text style={styles.headerTitle}>Order Help</Text>
       </View>
@@ -95,8 +85,17 @@ export default function OrderHelpScreen() {
               style={styles.optionCard}
               onPress={() => handleOptionPress(option)}
             >
-              <View style={styles.optionIconWrap}>
-                <Ionicons name={option.icon} size={18} color="#fff" />
+              <View
+                style={[
+                  styles.optionIconWrap,
+                  option.id === "cancel" ? styles.cancelOptionIconWrap : null,
+                ]}
+              >
+                <Ionicons
+                  name={option.icon}
+                  size={18}
+                  color="#fff"
+                />
               </View>
               <View style={styles.optionTextWrap}>
                 <Text style={styles.optionTitle}>{option.title}</Text>
@@ -123,8 +122,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-    backgroundColor: "#fff",
+    borderBottomColor: "#ea580c",
+    backgroundColor: "#f97316",
   },
   backButton: {
     width: 34,
@@ -132,12 +131,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#f8fafc",
+    backgroundColor: "rgba(255,255,255,0.22)",
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0f172a",
+    color: "#fff",
   },
   content: {
     flex: 1,
@@ -189,6 +188,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#111827",
+  },
+  cancelOptionIconWrap: {
+    backgroundColor: "#ef4444",
   },
   optionTextWrap: {
     flex: 1,

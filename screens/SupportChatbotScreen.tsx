@@ -35,17 +35,30 @@ interface RetryPayload {
 
 interface SupportChatParams {
   orderId?: string | string[];
+  topic?: string | string[];
 }
 
 const MAX_MESSAGE_LENGTH = 4000;
 const ORDER_STATUS_FALLBACK =
   "I am currently in the process of being connected to our live tracking system. For now, I can help you find your tracking number in your email or explain our general shipping timelines.";
 
-const QUICK_PROMPTS = [
+const DEFAULT_QUICK_PROMPTS = [
   "My order is delayed. What can I do?",
   "How do I request a refund?",
   "Can I edit my delivery address?",
   "I got a wrong item",
+] as const;
+
+const ISSUE_FIELDS = [
+  "Missing item",
+  "Wrong item",
+  "Damaged item",
+  "Item quality problem",
+  "Order not delivered",
+  "Order delayed",
+  "Cancel order",
+  "Payment issue",
+  "Something else",
 ] as const;
 
 const INITIAL_ASSISTANT_MESSAGE =
@@ -170,8 +183,11 @@ export function SupportChatbotScreen() {
   const listRef = useRef<FlatList<ChatMessage>>(null);
 
   const orderId = toSingleParam((params as SupportChatParams).orderId);
+  const topic = toSingleParam((params as SupportChatParams).topic);
+  const isIssueTopic = topic === "issue";
   const isDark = colorScheme === "dark";
   const bubbleMaxWidth = Math.min(Math.round(width * 0.8), 520);
+  const quickPrompts = isIssueTopic ? ISSUE_FIELDS : DEFAULT_QUICK_PROMPTS;
   const conversationIdRef = useRef<string | null>(
     orderId ? buildConversationId(orderId) : null,
   );
@@ -353,7 +369,7 @@ export function SupportChatbotScreen() {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.quickPromptsRow}
           >
-            {QUICK_PROMPTS.map((prompt) => (
+            {quickPrompts.map((prompt) => (
               <Pressable
                 key={prompt}
                 style={styles.quickPromptChip}

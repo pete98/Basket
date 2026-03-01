@@ -1,7 +1,3 @@
-import Constants from "expo-constants";
-import { ApiClientError, type ApiError } from "./client";
-import { withStoredAccessTokenHeader } from "./auth-header";
-import { logApiError, logApiRequest, logApiResponse } from "./request-logger";
 import type {
   CreateSupportTicketRequest,
   SupportAttachmentMetadata,
@@ -11,6 +7,10 @@ import type {
   SupportTicket,
   SupportTicketPage,
 } from "@/lib/types/support";
+import Constants from "expo-constants";
+import { withStoredAccessTokenHeader } from "./auth-header";
+import { ApiClientError, type ApiError } from "./client";
+import { logApiError, logApiRequest, logApiResponse } from "./request-logger";
 
 interface SupportApiExtra {
   supportServiceBaseUrl?: string;
@@ -26,15 +26,24 @@ interface ApiPaginationEnvelope<T> {
 }
 
 const extra = (Constants.expoConfig?.extra ?? {}) as SupportApiExtra;
-const SUPPORT_API_BASE_URL =
+const RAW_SUPPORT_API_BASE_URL =
   extra.supportServiceBaseUrl ||
   process.env.EXPO_PUBLIC_SUPPORT_SERVICE_BASE_URL ||
   extra.inventoryServiceBaseUrl ||
   process.env.EXPO_PUBLIC_INVENTORY_BASE_URL ||
-  "https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app";
+  "https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app/api/";
+
+function normalizeSupportApiBaseUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/api")) return `${trimmed}/`;
+  return `${trimmed}/api/`;
+}
+
+const SUPPORT_API_BASE_URL = normalizeSupportApiBaseUrl(RAW_SUPPORT_API_BASE_URL);
 
 function getSupportApiUrl(endpoint: string): string {
-  return `${SUPPORT_API_BASE_URL}${endpoint}`;
+  const normalizedEndpoint = endpoint.startsWith("/") ? endpoint.slice(1) : endpoint;
+  return `${SUPPORT_API_BASE_URL}${normalizedEndpoint}`;
 }
 
 function parseSupportApiError(
@@ -209,6 +218,57 @@ export async function listMySupportTickets(
 ): Promise<SupportTicketPage> {
   const query = new URLSearchParams({
     customerId: params.customerId,
+    page: String(params.page ?? 0),
+    size: String(params.size ?? 20),
+  });
+
+  const response = await supportApiRequest<
+    ApiPaginationEnvelope<SupportTicket> | SupportTicket[]
+  >(`/v1/support/tickets?${query.toString()}`, { signal: params.signal });
+
+  if (Array.isArray(response)) {
+    return {
+      content: response.map(normalizeTicket),
+      page: params.page ?? 0,
+      size: params.size ?? 20,
+      totalElements: response.length,
+      totalPages: 1,
+      hasNext: false,
+    };
+  }
+
+  const content = Array.isArray(response.content)
+    ? response.content.map(normalizeTicket)
+    : [];
+  const page = response.page ?? params.page ?? 0;
+  const size = response.size ?? params.size ?? 20;
+  const totalElements = response.totalElements ?? content.length;
+  const totalPages = response.totalPages ?? 1;
+
+  return {
+    content,
+    page,
+    size,
+    totalElements,
+    totalPages,
+    hasNext: page + 1 < totalPages,
+  };
+}
+
+export interface ListSupportTicketsByOrderAndTypeParams {
+  orderId: string;
+  type: string;
+  page?: number;
+  size?: number;
+  signal?: AbortSignal;
+}
+
+export async function listSupportTicketsByOrderAndType(
+  params: ListSupportTicketsByOrderAndTypeParams,
+): Promise<SupportTicketPage> {
+  const query = new URLSearchParams({
+    orderId: params.orderId,
+    type: params.type,
     page: String(params.page ?? 0),
     size: String(params.size ?? 20),
   });

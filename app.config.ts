@@ -53,7 +53,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const supportServiceBaseUrl =
     process.env.EXPO_PUBLIC_SUPPORT_SERVICE_BASE_URL ||
     process.env.SUPPORT_SERVICE_BASE_URL ||
-    'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app';
+    'https://8816-2600-4041-41f3-f300-d954-a29a-e130-5fb0.ngrok-free.app/api/';
 
   return {
     ...config,

@@ -112,7 +112,13 @@ function AppStack() {
       <Stack.Screen name="order-history" options={{ headerShown: false }} />
       <Stack.Screen name="order-detail" options={{ headerShown: false }} />
       <Stack.Screen name="help" options={{ headerShown: false }} />
+      <Stack.Screen name="help-issue-items" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="help-order-not-delivered"
+        options={{ headerShown: false }}
+      />
       <Stack.Screen name="order-help" options={{ headerShown: false }} />
+      <Stack.Screen name="ticket-result" options={{ headerShown: false }} />
       <Stack.Screen name="support-chatbot" options={{ headerShown: false }} />
     </Stack>
   );

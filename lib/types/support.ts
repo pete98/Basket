@@ -62,6 +62,7 @@ export interface SupportTicket {
   description: string;
   priority: SupportTicketPriority | string;
   status: string;
+  decisionReason?: string;
   evidenceProvided: boolean;
   createdAt: string;
   updatedAt?: string;
