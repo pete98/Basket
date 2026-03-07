@@ -68,6 +68,10 @@ function toIssueTypeParam(field: string): string {
   return field.trim().toUpperCase().replace(/\s+/g, "_");
 }
 
+function hasMatchingOrderId(ticket: SupportTicket, orderId: string): boolean {
+  return String(ticket.orderId || "").trim() === orderId.trim();
+}
+
 export default function HelpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -125,7 +129,9 @@ export default function HelpScreen() {
         if (latestIssueCheckKeyRef.current !== issueCheckKey) return;
 
         const existingTicket = existing.content.find(
-          (ticket) => toIssueTypeParam(String(ticket.type || "")) === issueType,
+          (ticket) =>
+            hasMatchingOrderId(ticket, orderId) &&
+            toIssueTypeParam(String(ticket.type || "")) === issueType,
         );
         if (existingTicket) {
           setCachedOrderId(orderId);

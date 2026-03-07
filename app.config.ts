@@ -64,7 +64,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: './assets/images/icon.png',
     scheme: auth0Scheme,
     userInterfaceStyle: 'automatic',
-    newArchEnabled: true,
     ios: {
       ...config.ios,
       supportsTablet: true,
@@ -78,7 +77,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         backgroundImage: './assets/images/android-icon-background.png',
         monochromeImage: './assets/images/android-icon-monochrome.png',
       },
-      edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       package: androidPackage,
     },
@@ -88,6 +86,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       'expo-router',
+      'expo-font',
+      'expo-image',
       [
         'expo-splash-screen',
         {
@@ -101,6 +101,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       ],
       'expo-secure-store',
+      [
+        '@stripe/stripe-react-native',
+        {
+          merchantIdentifier: stripeMerchantId,
+        },
+      ],
+      'expo-web-browser',
       [
         'react-native-auth0',
         {

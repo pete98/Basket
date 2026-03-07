@@ -655,7 +655,8 @@ export default function HomeScreen() {
   }, [getAccessToken, isLoggedIn]);
 
   useEffect(() => {
-    if (resolvedStoreId === null) {
+    const storeId = resolvedStoreId;
+    if (storeId === null) {
       setHomeLayout(null);
       setHomeLayoutError(null);
       return;
@@ -663,12 +664,13 @@ export default function HomeScreen() {
 
     let isActive = true;
     const abortController = new AbortController();
+    const resolvedStoreIdValue = storeId;
 
     async function loadHomeLayout() {
       try {
         setHomeLayoutError(null);
         if (__DEV__) {
-          console.log('[home] requesting home-layout:', getApiUrl(`/api/stores/${resolvedStoreId}/home-layout`));
+          console.log('[home] requesting home-layout:', getApiUrl(`/api/stores/${resolvedStoreIdValue}/home-layout`));
         }
         const accessToken = await getAccessToken();
         if (!accessToken) {
@@ -678,7 +680,7 @@ export default function HomeScreen() {
           return;
         }
         const layout = await getStoreHomeLayout({
-          storeId: resolvedStoreId,
+          storeId: resolvedStoreIdValue,
           accessToken,
           signal: abortController.signal,
         });
@@ -701,7 +703,8 @@ export default function HomeScreen() {
   }, [getAccessToken, resolvedStoreId]);
 
   useEffect(() => {
-    if (resolvedStoreId === null) {
+    const storeId = resolvedStoreId;
+    if (storeId === null) {
       setResolvedStoreName('');
       return;
     }
@@ -714,12 +717,13 @@ export default function HomeScreen() {
 
     let isActive = true;
     const abortController = new AbortController();
+    const resolvedStoreIdValue = storeId;
 
     async function loadResolvedStoreName() {
       try {
         const accessToken = await getAccessToken();
         const store = await getStoreById({
-          storeId: resolvedStoreId,
+          storeId: resolvedStoreIdValue,
           accessToken: accessToken ?? undefined,
           signal: abortController.signal,
         });
@@ -742,7 +746,8 @@ export default function HomeScreen() {
   
   // Fetch store categories only (no master categories)
   useEffect(() => {
-    if (resolvedStoreId === null) {
+    const storeId = resolvedStoreId;
+    if (storeId === null) {
       setCategories([]);
       setCategoriesError('Select a store to load categories.');
       setCategoriesLoading(false);
@@ -751,13 +756,14 @@ export default function HomeScreen() {
 
     let isActive = true;
     const abortController = new AbortController();
+    const resolvedStoreIdValue = storeId;
 
     async function loadStoreCategories() {
       try {
         setCategoriesLoading(true);
         setCategoriesError(null);
         if (__DEV__) {
-          console.log('[home] requesting store categories:', getApiUrl(`/api/stores/${resolvedStoreId}/categories`));
+          console.log('[home] requesting store categories:', getApiUrl(`/api/stores/${resolvedStoreIdValue}/categories`));
         }
         const accessToken = await getAccessToken();
         if (!accessToken) {
@@ -767,7 +773,7 @@ export default function HomeScreen() {
           return;
         }
         const data = await getStoreCategories({
-          storeId: resolvedStoreId,
+          storeId: resolvedStoreIdValue,
           accessToken,
           signal: abortController.signal,
         });

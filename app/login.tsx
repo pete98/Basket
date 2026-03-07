@@ -1,3 +1,4 @@
+import type { Href } from 'expo-router';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import React, { useMemo, useState } from 'react';
@@ -64,23 +65,34 @@ export default function LoginScreen() {
     }
   }
 
+  const redirectHref = useMemo(() => {
+    if (!redirect) return undefined;
+    if (!redirectParams || Object.keys(redirectParams).length === 0) return redirect as Href;
+
+    const searchParams = new URLSearchParams(redirectParams);
+    return `${redirect}?${searchParams.toString()}` as Href;
+  }, [redirect, redirectParams]);
+
   const handlePrimary = async () => {
     if (!isAuth0Configured) return;
     setIsProcessing(true);
     try {
       const resolvedAudience = auth0Config.audience || FALLBACK_AUTH0_AUDIENCE;
-      const authorizeOptions: Parameters<typeof authorize>[0] = {
+      const authorizeParameters: Parameters<typeof authorize>[0] = {
         audience: resolvedAudience,
         scope: 'openid profile email offline_access',
       };
+      const authorizeOptions = auth0Config.customScheme
+        ? { customScheme: auth0Config.customScheme }
+        : undefined;
       if (auth0Config.customScheme) {
-        authorizeOptions.customScheme = auth0Config.customScheme;
+        console.log('Auth0 custom scheme configured:', auth0Config.customScheme);
       }
       console.log('Auth0 authorize options:', {
         audience: resolvedAudience,
-        customScheme: authorizeOptions.customScheme || '(default)',
+        customScheme: authorizeOptions?.customScheme || '(default)',
       });
-      const authResult = await authorize(authorizeOptions);
+      const authResult = await authorize(authorizeParameters, authorizeOptions);
       console.log('Auth0 authorize succeeded');
       let shouldOnboard = false;
       console.log('Auth0 credentials keys:', Object.keys(authResult ?? {}));
@@ -122,8 +134,8 @@ export default function LoginScreen() {
       }
       if (shouldOnboard) {
         router.replace('/onboarding');
-      } else if (redirect) {
-        router.replace({ pathname: redirect, params: redirectParams });
+      } else if (redirectHref) {
+        router.replace(redirectHref);
       } else {
         router.replace('/(tabs)');
       }

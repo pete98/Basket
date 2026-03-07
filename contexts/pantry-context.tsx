@@ -22,7 +22,7 @@ interface PantryContextType {
 
 const PantryContext = createContext<PantryContextType | undefined>(undefined);
 
-function calculateStatus(item: Omit<PantryItem, 'status'>): PantryItemStatus {
+function calculateStatus(item: Pick<PantryItem, 'expiryDate' | 'quantity'>): PantryItemStatus {
   if (!item.expiryDate) return 'fresh';
 
   const expiryDate = new Date(item.expiryDate);
@@ -181,4 +181,3 @@ export function usePantry() {
   }
   return context;
 }
-

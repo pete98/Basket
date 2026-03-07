@@ -1,22 +1,14 @@
 import { GlassView } from 'expo-glass-effect';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function SearchScreen() {
   const [query, setQuery] = useState('');
-  const insets = useSafeAreaInsets();
 
   return (
     <ScrollView
-      style={[
-        styles.container,
-        {
-          paddingTop: insets.top + 24,
-          paddingBottom: insets.bottom,
-          backgroundColor: '#f7f7f9',
-        },
-      ]}
+      style={styles.container}
+      contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={styles.contentContainer}>
       <Text style={styles.label}>Search</Text>
       <GlassView
@@ -59,10 +51,13 @@ function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f7f7f9',
   },
   contentContainer: {
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
     width: '100%',
     minHeight: '100%',
   },

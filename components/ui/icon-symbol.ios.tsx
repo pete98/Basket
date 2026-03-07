@@ -1,38 +1,7 @@
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { SymbolView, SymbolViewProps, SymbolWeight } from 'expo-symbols';
+import { SymbolView, SymbolWeight } from 'expo-symbols';
 import { StyleProp, View, ViewStyle } from 'react-native';
-
-// SF Symbol to Material Icon mapping
-const MAPPING: Record<string, string> = {
-  'house.fill': 'home',
-  'paperplane.fill': 'send',
-  'chevron.left.forwardslash.chevron.right': 'code',
-  'chevron.right': 'chevron-right',
-  'leaf.fill': 'eco',
-  'drop.fill': 'water-drop',
-  'flame.fill': 'local-fire-department',
-  'birthday.cake.fill': 'cake',
-  'cup.and.saucer.fill': 'local-cafe',
-  'bag.fill': 'shopping-bag',
-  'snowflake': 'ac-unit',
-  'archivebox.fill': 'inventory',
-  'apple.fill': 'apple',
-  'cart.fill': 'shopping-cart',
-  'applescript.fill': 'cake',
-  'cup.fill': 'local-cafe',
-  'star.fill': 'star',
-  'sparkles': 'auto-awesome',
-  'carrot.fill': 'eco',
-  'tray.fill': 'inventory',
-  'basket.fill': 'shopping-bag',
-  'drop.circle.fill': 'water-drop',
-  'flame.circle.fill': 'local-fire-department',
-  'house.circle.fill': 'home',
-  'fish.fill': 'set-meal',
-  'square.grid.2x2.fill': 'apps',
-  'person.fill': 'person',
-  'magnifyingglass': 'search',
-};
+import type { SFSymbol } from 'sf-symbols-typescript';
+import type { IconSymbolName } from './icon-symbol';
 
 export function IconSymbol({
   name,
@@ -41,21 +10,19 @@ export function IconSymbol({
   style,
   weight = 'regular',
 }: {
-  name: SymbolViewProps['name'];
+  name: IconSymbolName;
   size?: number;
   color: string;
   style?: StyleProp<ViewStyle>;
   weight?: SymbolWeight;
 }) {
-  const materialIconName = MAPPING[name as string] as any;
-  
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+    <View>
       <SymbolView
         weight={weight}
         tintColor={color}
         resizeMode="scaleAspectFit"
-        name={name}
+        name={name as SFSymbol}
         style={[
           {
             width: size,
@@ -64,14 +31,6 @@ export function IconSymbol({
           style,
         ]}
       />
-      {materialIconName && (
-        <MaterialIcons 
-          name={materialIconName} 
-          size={size} 
-          color={color} 
-          style={style}
-        />
-      )}
     </View>
   );
 }

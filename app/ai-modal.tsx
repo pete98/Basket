@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
+  ViewStyle,
   Easing,
   useWindowDimensions,
   Keyboard,
@@ -104,8 +106,8 @@ export default function AIModalScreen() {
   const params = useLocalSearchParams<{ left?: string; top?: string }>();
   const insets = useSafeAreaInsets();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const colorScheme: keyof typeof Colors = useColorScheme() ?? 'light';
+  const colors = Colors[colorScheme];
 
   const parsedLeft = params.left !== undefined ? Number(params.left) : NaN;
   const parsedTop = params.top !== undefined ? Number(params.top) : NaN;
@@ -217,7 +219,7 @@ export default function AIModalScreen() {
   const isPanelAboveButton = finalTop + effectiveHeight <= anchorTop + FAB_SIZE / 2;
   const pointerLeft = clamp(anchorX - finalLeft - 8, 12, panelWidth - 28);
 
-  const handlePanelLayout = useCallback((event: any) => {
+  const handlePanelLayout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
     setPanelSize((prev) => {
       if (prev.width === width && prev.height === height) return prev;
@@ -313,7 +315,7 @@ export default function AIModalScreen() {
   const renderMessage = useCallback(
     ({ item }: { item: ChatMessage }) => {
       const isUser = item.role === 'user';
-      const bubbleStyles = [
+      const bubbleStyles: ViewStyle[] = [
         styles.bubble,
         {
           backgroundColor: isUser ? colors.tint : assistantBubbleColor,

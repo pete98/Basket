@@ -21,6 +21,8 @@ interface StoredPosition {
   y: number;
 }
 
+type ThemeName = keyof typeof Colors;
+
 function clamp(value: number, min: number, max: number): number {
   'worklet';
   if (value < min) return min;
@@ -30,10 +32,10 @@ function clamp(value: number, min: number, max: number): number {
 
 export const AIFab: React.FC = React.memo(function AIFab() {
   const router = useRouter();
-  const colorScheme = useColorScheme();
+  const colorScheme: ThemeName = useColorScheme() ?? 'light';
   const insets = useSafeAreaInsets();
 
-  const backgroundColor = useMemo(() => Colors[colorScheme ?? 'light'].tint, [colorScheme]);
+  const backgroundColor = useMemo(() => Colors[colorScheme].tint, [colorScheme]);
   const iconColor = useMemo(() => (colorScheme === 'dark' ? '#111' : '#fff'), [colorScheme]);
 
   // Shared values for translation
