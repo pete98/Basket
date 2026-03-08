@@ -27,8 +27,6 @@ export default function CartScreen() {
   const taxRate = 0.06625; // Estimated tax rate
   const tax = total * taxRate;
   const finalTotal = total + tax;
-  const itemCountLabel = items.length === 1 ? '1 item' : `${items.length} items`;
-
   const handleCheckout = () => {
     if (!items.length) return;
     const checkoutTarget = { pathname: '/schedule-order' as const };
@@ -49,8 +47,14 @@ export default function CartScreen() {
     }
   };
 
-  const renderCartItem = ({ item }: { item: (typeof items)[number] }) => (
-    <View style={styles.cartItem}>
+  const renderCartItem = ({
+    item,
+    index,
+  }: {
+    item: (typeof items)[number];
+    index: number;
+  }) => (
+    <View style={[styles.cartItem, index === 0 && styles.cartItemTopSpacing]}>
       <View style={styles.itemImageWrapper}>
         {item.image ? (
           <Image 
@@ -112,11 +116,10 @@ export default function CartScreen() {
           <View style={styles.pageHeaderContent}>
             <View>
               <Text style={styles.pageHeaderTitle}>My Cart</Text>
-              <Text style={styles.pageHeaderSubtitle}>It feels lonely in here</Text>
             </View>
           </View>
         </View>
-        <View style={styles.emptyContainer}>
+        <View style={[styles.emptyContainer, styles.contentTopSpacing]}>
           <View style={styles.emptyIcon}>
             <Ionicons name="cart-outline" size={44} color="#B0B3C1" />
           </View>
@@ -140,13 +143,6 @@ export default function CartScreen() {
         <View style={styles.pageHeaderContent}>
           <View>
             <Text style={styles.pageHeaderTitle}>My Cart</Text>
-            <Text style={styles.pageHeaderSubtitle}>
-              {itemCountLabel} · ${total.toFixed(2)} subtotal
-            </Text>
-          </View>
-          <View style={styles.deliveryTag}>
-            <Ionicons name="bicycle-outline" size={16} color="#fff" />
-            <Text style={styles.deliveryTagText}>Free delivery over $35</Text>
           </View>
         </View>
       </View>
@@ -216,46 +212,21 @@ const styles = StyleSheet.create({
     color: '#667085',
     marginTop: 4,
   },
-  deliveryTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    borderRadius: 999,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-  },
-  deliveryTagText: {
-    fontSize: 12,
-    color: '#fff',
-    fontWeight: '600',
-  },
   pageHeaderBackground: {
     backgroundColor: '#f97316',
     borderBottomWidth: 1,
     borderBottomColor: '#ea580c',
-    marginBottom: 16,
   },
   pageHeaderContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 8,
-    marginBottom: 8,
+    paddingBottom: 12,
+    minHeight: 56,
+    justifyContent: 'center',
   },
   pageHeaderTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
-  },
-  pageHeaderSubtitle: {
-    color: '#ffe8d2',
-    fontSize: 14,
-    marginTop: 4,
   },
   emptyContainer: {
     flex: 1,
@@ -301,7 +272,14 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: 20,
+    paddingTop: 0,
     paddingBottom: 160,
+  },
+  cartItemTopSpacing: {
+    marginTop: 12,
+  },
+  contentTopSpacing: {
+    marginTop: 12,
   },
   cartItem: {
     flexDirection: 'row',

@@ -53,7 +53,7 @@ const CATEGORY_CARD_SIZE = 64; // Compact square cards
 const CATEGORY_CARD_HEIGHT = 64;
 // Product card width for horizontal lists - shows ~2.25 cards at once
 const PRODUCT_CARD_WIDTH = (SCREEN_WIDTH - 32 - 24) / 2.25; // Screen width - padding (16*2) - gaps (12*2) / 2.25 cards
-const BACK_BUTTON_SIZE = 54;
+const BACK_BUTTON_SIZE = 46;
 
 // Default category display order for home page
 // Match by both code and displayName for flexibility
@@ -443,8 +443,7 @@ export default function HomeScreen() {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const searchTransition = useRef(new Animated.Value(0)).current;
   const categoryExpandProgress = useRef(new Animated.Value(0)).current;
-  const BACK_BUTTON_SIZE = 54;
-  const [categorySectionHeight, setCategorySectionHeight] = useState(0);
+  const [searchPillHeight, setSearchPillHeight] = useState(0);
   const [isCategoryHidden, setIsCategoryHidden] = useState(false);
   const scrollOffsetRef = useRef(0);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
@@ -1107,33 +1106,29 @@ export default function HomeScreen() {
     return unsubscribe;
   }, [categories, openCategoryProducts]);
 
-  const handleCategorySectionLayout = useCallback((event: any) => {
-    if (isInlineCategoriesVisible) return;
+  const handleSearchPillLayout = useCallback((event: any) => {
     const { height } = event.nativeEvent.layout;
     if (height <= 0) return;
-    setCategorySectionHeight((previousHeight) => {
-      if (previousHeight > 0 && height > previousHeight) return previousHeight;
-      return height;
-    });
-  }, [isInlineCategoriesVisible]);
+    setSearchPillHeight(height);
+  }, []);
 
-  const topOffset = categorySectionHeight > 0 ? categorySectionHeight : insets.top + 60;
+  const SEARCH_BODY_TOP_GAP = 16;
+  const topOffset = searchPillHeight > 0
+    ? insets.top + 4 + searchPillHeight + SEARCH_BODY_TOP_GAP
+    : insets.top + 60 + SEARCH_BODY_TOP_GAP;
   const contentTopInset = 0;
   const contentBottomInset = insets.bottom + 24;
 
   return (
     <View style={styles.container}>
       {/* Fixed Category Container at Top */}
-      <View
-        style={[
-          styles.categorySection,
-          { paddingTop: insets.top + 2 },
-        ]}
-        onLayout={handleCategorySectionLayout}
-      >
+      <View style={[styles.categorySection, { paddingTop: insets.top + 2 }]}>
         <View style={styles.categoryContent}>
           {/* Search Pill with location + toggle */}
-          <View style={[styles.searchPill, !isSearchFocused && styles.searchPillInactive]}>
+          <View
+            style={[styles.searchPill, !isSearchFocused && styles.searchPillInactive]}
+            onLayout={handleSearchPillLayout}
+          >
             <View style={styles.searchPillRow}>
               <Animated.View
                 style={[
@@ -1314,13 +1309,15 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      <View style={[styles.contentAnchorSpacer, { height: topOffset }]} />
+
       {/* Use FlatList for search results to avoid nested VirtualizedList, ScrollView for other content */}
       {isSearchFocused || searchQuery.trim().length > 0 ? (
         <>
           {/* Search Results - Only show when not focused (after search is submitted) */}
           {!isSearchFocused && searchQuery.trim().length > 0 && searchResults.length > 0 ? (
           <FlatList
-            style={[styles.scrollView, { marginTop: topOffset + contentTopInset }]}
+            style={styles.scrollView}
             data={searchResults}
             numColumns={2}
             showsVerticalScrollIndicator={false}
@@ -1361,7 +1358,7 @@ export default function HomeScreen() {
             />
           ) : (
             <ScrollView 
-              style={[styles.scrollView, { marginTop: topOffset }]} 
+              style={styles.scrollView} 
               showsVerticalScrollIndicator={false}
               contentContainerStyle={[
                 styles.scrollContent,
@@ -1409,7 +1406,7 @@ export default function HomeScreen() {
       ) : (
         /* Product Sections - Only show when search is not focused and no query */
         <ScrollView 
-          style={[styles.scrollView, { marginTop: topOffset }]} 
+          style={styles.scrollView} 
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
             styles.scrollContent,
@@ -1494,13 +1491,14 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
   },
   categorySection: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: '#FFFFFF',
     zIndex: 1000,
     paddingHorizontal: 0,
     paddingBottom: 0,
@@ -1537,6 +1535,10 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  contentAnchorSpacer: {
+    backgroundColor: '#fff',
+    width: '100%',
   },
   scrollContent: {
     // Content flows naturally with category section at top
@@ -1737,7 +1739,7 @@ const styles = StyleSheet.create({
   },
   heroSection: {
     position: 'relative',
-    marginTop: 8,
+    marginTop: 0,
     marginBottom: 0,
     paddingHorizontal: 0,
   },
@@ -1837,7 +1839,7 @@ const styles = StyleSheet.create({
     color: '#f8fafc',
   },
   searchPill: {
-    marginBottom: 10,
+    marginBottom: 0,
     overflow: 'hidden',
     width: '100%',
   },
@@ -1856,7 +1858,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'stretch',
     gap: 0,
-    minHeight: 54,
+    minHeight: 46,
     paddingHorizontal: 10,
     paddingBottom: 0,
     borderRadius: 26,
@@ -1866,7 +1868,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   searchBarRow: {
-    height: 54,
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1883,14 +1885,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   searchBackButtonWrapper: {
-    height: 54,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
   },
   searchBackButton: {
     width: BACK_BUTTON_SIZE,
     height: BACK_BUTTON_SIZE,
-    borderRadius: 26,
+    borderRadius: 23,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     backgroundColor: '#fff',
@@ -1905,7 +1907,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '400',
     color: '#0f172a',
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: 0,
     margin: 0,
     minHeight: 36,

@@ -93,10 +93,12 @@ function DealSectionCard({
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={styles.sectionTitleRow}>
-          <ThemedText type="subtitle" style={styles.sectionTitle}>
-            {section.title}
-          </ThemedText>
-          {!!section.badgeText && <Text style={styles.sectionBadge}>{section.badgeText}</Text>}
+          <View style={styles.sectionTitleBlock}>
+            <ThemedText type="subtitle" style={styles.sectionTitle}>
+              {section.title}
+            </ThemedText>
+            <View style={styles.sectionTitleUnderline} />
+          </View>
         </View>
       </View>
       {!!section.subtitle && <Text style={styles.sectionDescription}>{section.subtitle}</Text>}
@@ -133,6 +135,7 @@ export default function DealsScreen() {
   const [dealsLayout, setDealsLayout] = useState<DealsSectionsResponse | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const resolvedStoreId = useMemo(
@@ -153,6 +156,60 @@ export default function DealsScreen() {
     if (accessToken) await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, accessToken);
     return accessToken;
   }, [getCredentials]);
+
+  const loadDeals = useCallback(
+    async ({ signal, isRefresh = false }: { signal: AbortSignal; isRefresh?: boolean }) => {
+      if (!isLoggedIn) {
+        setDealsLayout(null);
+        setLoadError(null);
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
+      if (!resolvedStoreId) {
+        setDealsLayout(null);
+        setLoadError('Select a store to load deals.');
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return;
+      }
+
+      if (isRefresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+      setLoadError(null);
+
+      try {
+        const accessToken = await getAccessToken();
+        if (!accessToken) {
+          setDealsLayout(null);
+          setLoadError('Log in to load deals.');
+          return;
+        }
+
+        const response = await getDealsSections({
+          storeId: resolvedStoreId,
+          accessToken,
+          signal,
+        });
+        setDealsLayout(response);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+        setDealsLayout(null);
+        setLoadError(error instanceof Error ? error.message : 'Unable to load deals.');
+      } finally {
+        if (isRefresh) {
+          setIsRefreshing(false);
+          return;
+        }
+        setIsLoading(false);
+      }
+    },
+    [getAccessToken, isLoggedIn, resolvedStoreId]
+  );
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -186,59 +243,18 @@ export default function DealsScreen() {
   }, [getAccessToken, isLoggedIn]);
 
   useEffect(() => {
-    if (!isLoggedIn) {
-      setDealsLayout(null);
-      setLoadError(null);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!resolvedStoreId) {
-      setDealsLayout(null);
-      setIsLoading(false);
-      setLoadError('Select a store to load deals.');
-      return;
-    }
-
-    let isActive = true;
     const controller = new AbortController();
-
-    setIsLoading(true);
-    setLoadError(null);
-
-    getAccessToken()
-      .then(async (accessToken) => {
-        if (!accessToken) {
-          if (!isActive) return null;
-          setDealsLayout(null);
-          setLoadError('Log in to load deals.');
-          return null;
-        }
-        const response = await getDealsSections({
-          storeId: resolvedStoreId,
-          accessToken,
-          signal: controller.signal,
-        });
-        if (!isActive) return null;
-        setDealsLayout(response);
-        return response;
-      })
-      .catch((error) => {
-        if (!isActive) return;
-        if (error instanceof Error && error.name === 'AbortError') return;
-        setDealsLayout(null);
-        setLoadError(error instanceof Error ? error.message : 'Unable to load deals.');
-      })
-      .finally(() => {
-        if (!isActive) return;
-        setIsLoading(false);
-      });
+    void loadDeals({ signal: controller.signal });
 
     return () => {
-      isActive = false;
       controller.abort();
     };
-  }, [getAccessToken, isLoggedIn, resolvedStoreId]);
+  }, [loadDeals]);
+
+  const handleRefresh = useCallback(() => {
+    const controller = new AbortController();
+    void loadDeals({ signal: controller.signal, isRefresh: true });
+  }, [loadDeals]);
 
   if (!isLoggedIn) {
     return (
@@ -247,11 +263,10 @@ export default function DealsScreen() {
           <View style={styles.pageHeaderContent}>
             <View>
               <Text style={styles.pageHeaderTitle}>Deals</Text>
-              <Text style={styles.pageHeaderSubtitle}>Log in to view offers</Text>
             </View>
           </View>
         </View>
-        <View style={styles.infoCard}>
+        <View style={[styles.infoCard, styles.contentTopSpacing]}>
           <Text style={styles.infoTitle}>Your deals live here</Text>
           <Text style={styles.infoSubtitle}>Log in to browse store-specific deals and active offers.</Text>
           <Pressable style={styles.primaryButton} onPress={() => openLogin({ pathname: '/deals' })}>
@@ -264,33 +279,33 @@ export default function DealsScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}> 
-        <View style={styles.pageHeaderContent}>
-          <View>
-            <Text style={styles.pageHeaderTitle}>Deals</Text>
-            <Text style={styles.pageHeaderSubtitle}>
-              {isLoading ? 'Loading deals...' : 'Store promotions'}
-            </Text>
+        <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}> 
+          <View style={styles.pageHeaderContent}>
+            <View>
+              <Text style={styles.pageHeaderTitle}>Deals</Text>
+            </View>
           </View>
         </View>
-      </View>
 
       <View style={styles.content}>
         {isLoading && (
-          <View style={styles.centerState}>
+          <View style={[styles.centerState, styles.contentTopSpacing]}>
             <ActivityIndicator size="small" color="#111827" />
           </View>
         )}
 
         {!isLoading && loadError && (
-          <View style={styles.infoCard}>
+          <View style={[styles.infoCard, styles.contentTopSpacing]}>
             <Text style={styles.infoTitle}>Unable to load config</Text>
             <Text style={styles.infoSubtitle}>{loadError}</Text>
+            <Pressable style={styles.secondaryButton} onPress={handleRefresh}>
+              <Text style={styles.secondaryButtonText}>Refresh deals</Text>
+            </Pressable>
           </View>
         )}
 
         {!isLoading && !loadError && dealsLayout && orderedSections.length === 0 && (
-          <View style={styles.infoCard}>
+          <View style={[styles.infoCard, styles.contentTopSpacing]}>
             <Text style={styles.infoTitle}>No deals right now</Text>
             <Text style={styles.infoSubtitle}>
               We could not find any active deals for this store yet. Please check back soon.
@@ -304,6 +319,8 @@ export default function DealsScreen() {
             keyExtractor={(item, index) => `${item.promotionId}-${index}`}
             contentContainerStyle={styles.sectionsList}
             showsVerticalScrollIndicator={false}
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
             renderItem={({ item }) => <DealSectionCard section={item} onProductPress={setSelectedProduct} />}
           />
         )}
@@ -331,31 +348,32 @@ const styles = StyleSheet.create({
   pageHeaderContent: {
     paddingHorizontal: 16,
     paddingBottom: 12,
+    minHeight: 56,
+    justifyContent: 'center',
   },
   pageHeaderTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
   },
-  pageHeaderSubtitle: {
-    fontSize: 14,
-    color: '#ffe8d2',
-    marginTop: 4,
-  },
   content: {
     flex: 1,
     paddingLeft: 16,
     paddingRight: 0,
-    paddingTop: 24,
+    paddingTop: 0,
   },
   centerState: {
-    marginTop: 24,
+    marginTop: 0,
     alignItems: 'center',
   },
   sectionsList: {
     paddingHorizontal: 0,
-    paddingTop: 2,
+    paddingTop: 0,
     paddingBottom: 24,
+    marginTop: 12,
+  },
+  contentTopSpacing: {
+    marginTop: 12,
   },
   infoCard: {
     padding: 20,
@@ -387,6 +405,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  secondaryButton: {
+    alignSelf: 'flex-start',
+    marginTop: 16,
+    backgroundColor: '#1C1C1E',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   section: {
     marginBottom: 20,
   },
@@ -400,7 +432,14 @@ const styles = StyleSheet.create({
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
+    width: '100%',
+  },
+  sectionTitleBlock: {
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    gap: 6,
   },
   sectionTitle: {
     paddingHorizontal: 0,
@@ -409,22 +448,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#000',
   },
+  sectionTitleUnderline: {
+    width: '68%',
+    minWidth: 44,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#f97316',
+  },
   sectionDescription: {
     paddingHorizontal: 0,
     fontSize: 13,
     color: '#475467',
     marginBottom: 10,
-  },
-  sectionBadge: {
-    backgroundColor: '#ecfdf3',
-    color: '#027a48',
-    borderWidth: 1,
-    borderColor: '#abefc6',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    fontSize: 10,
-    fontWeight: '700',
   },
   emptyProductsText: {
     paddingHorizontal: 0,

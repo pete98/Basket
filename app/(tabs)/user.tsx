@@ -307,11 +307,10 @@ export default function UserProfile() {
 
   return (
     <View style={styles.container}>
-      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 10 }]}>
+      <View style={[styles.pageHeaderBackground, { paddingTop: insets.top + 8 }]}>
         <View style={styles.pageHeaderContent}>
           <View>
             <Text style={styles.pageHeaderTitle}>Your Profile</Text>
-            <Text style={styles.pageHeaderSubtitle}>Manage account & preferences</Text>
           </View>
         </View>
       </View>
@@ -320,12 +319,12 @@ export default function UserProfile() {
         contentContainerStyle={[
           styles.contentContainer,
           {
-            paddingTop: 16,
+            paddingTop: 0,
             paddingBottom: insets.bottom + 44,
           },
         ]}
         showsVerticalScrollIndicator={false}>
-        <View style={styles.profileCard}>
+        <View style={[styles.profileCard, styles.contentTopSpacing]}>
           <View style={styles.avatarWrapper}>
             <Image
               source={{
@@ -512,6 +511,9 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     paddingHorizontal: 16,
+  },
+  contentTopSpacing: {
+    marginTop: 12,
   },
   profileCard: {
     backgroundColor: '#fff',
@@ -710,21 +712,14 @@ const styles = StyleSheet.create({
     borderBottomColor: '#ea580c',
   },
   pageHeaderContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
     paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 8,
+    paddingBottom: 12,
+    minHeight: 56,
+    justifyContent: 'center',
   },
   pageHeaderTitle: {
     fontSize: 28,
     fontWeight: '700',
     color: '#fff',
-  },
-  pageHeaderSubtitle: {
-    color: '#ffe8d2',
-    fontSize: 14,
-    marginTop: 4,
   },
 });

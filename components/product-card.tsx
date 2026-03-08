@@ -194,7 +194,6 @@ const styles = StyleSheet.create({
     padding: 8,
     width: '100%',
     position: 'relative',
-    flex: 1,
     borderWidth: 1,
     borderColor: '#E4E7EC',
   },
@@ -203,6 +202,8 @@ const styles = StyleSheet.create({
   },
   productContent: {
     flex: 1,
+    flexDirection: 'column',
+    justifyContent: 'space-between',
   },
   addToCartIcon: {
     width: 36,
@@ -272,7 +273,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   detailsBlock: {
-    minHeight: 62,
+    minHeight: 52,
+    flex: 1,
   },
   promoSlot: {
     height: 20,
@@ -307,10 +309,12 @@ const styles = StyleSheet.create({
     color: '#4a5568',
   },
   priceRow: {
-    marginTop: 6,
-    paddingTop: 6,
+    marginTop: 'auto',
+    paddingTop: 4,
     borderTopWidth: 1,
     borderTopColor: '#E4E7EC',
+    marginBottom: 0,
+    paddingBottom: 0,
   },
   priceInfo: {
     flex: 1,

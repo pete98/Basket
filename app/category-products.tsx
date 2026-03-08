@@ -1,28 +1,16 @@
 import { ProductCard } from '@/components/product-card';
 import { ProductDetailSheet } from '@/components/product-detail-sheet';
 import { ThemedText } from '@/components/themed-text';
-import { useCart } from '@/contexts/cart-context';
 import { getStoreInventory, getSubcategoriesByCategoryCode } from '@/lib/api/stores';
 import { Product as ApiProduct, Subcategory } from '@/lib/types/api';
 import { UIProduct } from '@/lib/types/ui';
 import { buildCategoryNameCandidates } from '@/lib/utils/category';
-import { formatWeight, mapApiProductToProduct } from '@/lib/utils/products';
+import { mapApiProductToProduct } from '@/lib/utils/products';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Animated,
-  FlatList,
-  Image,
-  PanResponder,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
-} from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useAuth0 } from 'react-native-auth0';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -38,7 +26,17 @@ interface ProductSubcategorySection {
   products: UIProduct[];
 }
 
+interface ShelfAccent {
+  surface: string;
+}
+
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
+const SHELF_ACCENTS: ShelfAccent[] = [
+  { surface: '#0F766E' },
+  { surface: '#1D4ED8' },
+  { surface: '#B45309' },
+  { surface: '#BE185D' },
+];
 
 function parseStoreIdParam(storeId: string | undefined): number | null {
   if (!storeId) return null;
@@ -159,26 +157,32 @@ function buildGroupedProductSections(
   return [...configuredSections, ...fallbackSections];
 }
 
+function getShelfAccent(sectionTitle: string, index: number): ShelfAccent {
+  const normalizedTitle = normalizeCategoryValue(sectionTitle);
+
+  if (normalizedTitle.includes('energy drink')) {
+    return { surface: '#1E40AF' };
+  }
+
+  if (normalizedTitle.includes('juice')) {
+    return { surface: '#EA580C' };
+  }
+
+  if (normalizedTitle.includes('soda')) {
+    return { surface: '#B91C1C' };
+  }
+
+  return SHELF_ACCENTS[index % SHELF_ACCENTS.length];
+}
+
 export default function CategoryProductsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams() as CategoryParams;
   const { getCredentials } = useAuth0();
-  const { addItem, updateQuantity, state } = useCart();
   const [productSections, setProductSections] = useState<ProductSubcategorySection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isProductModalVisible, setIsProductModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<UIProduct | null>(null);
-  const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
-  const [selectedQuantity, setSelectedQuantity] = useState(1);
-  const [addButtonState, setAddButtonState] = useState<'idle' | 'added'>('idle');
-  const modalBackdropOpacity = useRef(new Animated.Value(0)).current;
-  const modalSheetTranslateY = useRef(new Animated.Value(520)).current;
-  const modalSheetDragY = useRef(new Animated.Value(0)).current;
-  const isClosingProductModal = useRef(false);
-  const addToCartScale = useRef(new Animated.Value(1)).current;
-  const addButtonFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeModalTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const categoryLabel =
     typeof params.displayName === 'string' && params.displayName.trim().length > 0
       ? params.displayName
@@ -311,155 +315,6 @@ export default function CategoryProductsScreen() {
   function closeProductModal() {
     setSelectedProduct(null);
   }
-
-  useEffect(() => {
-    if (!isProductModalVisible) return;
-
-    modalSheetDragY.setValue(0);
-    Animated.parallel([
-      Animated.timing(modalBackdropOpacity, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.spring(modalSheetTranslateY, {
-        toValue: 0,
-        friction: 9,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [isProductModalVisible, modalBackdropOpacity, modalSheetDragY, modalSheetTranslateY]);
-
-  const bottomSheetPanResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        gestureState.dy > 6 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-      onPanResponderMove: (_, gestureState) => {
-        modalSheetDragY.setValue(Math.max(0, gestureState.dy));
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dy > 120 || gestureState.vy > 1.2) {
-          closeProductModal();
-          return;
-        }
-
-        Animated.spring(modalSheetDragY, {
-          toValue: 0,
-          speed: 22,
-          bounciness: 0,
-          useNativeDriver: true,
-        }).start();
-      },
-      onPanResponderTerminate: () => {
-        Animated.spring(modalSheetDragY, {
-          toValue: 0,
-          speed: 22,
-          bounciness: 0,
-          useNativeDriver: true,
-        }).start();
-      },
-    }),
-  ).current;
-
-  function handleIncrement() {
-    setSelectedQuantity((prev) => prev + 1);
-  }
-
-  function handleDecrement() {
-    setSelectedQuantity((prev) => (prev > 1 ? prev - 1 : 1));
-  }
-
-  function handleAddToCart() {
-    if (!selectedProduct) return;
-    const desiredQuantity = Math.max(selectedQuantity, 1);
-    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
-    const quantity = cartItem?.quantity || 0;
-
-    if (quantity === 0) {
-      addItem({
-        id: selectedProduct.id,
-        name: selectedProduct.name,
-        price: selectedProduct.price,
-        image: selectedProduct.image || '',
-      });
-      if (desiredQuantity > 1) {
-        updateQuantity(selectedProduct.id, desiredQuantity);
-      }
-      return;
-    }
-
-    updateQuantity(selectedProduct.id, desiredQuantity);
-  }
-
-  function handleAddToCartPress() {
-    handleAddToCart();
-    setAddButtonState('added');
-
-    if (addButtonFeedbackTimer.current) {
-      clearTimeout(addButtonFeedbackTimer.current);
-    }
-    addButtonFeedbackTimer.current = setTimeout(() => {
-      setAddButtonState('idle');
-    }, 1200);
-
-    if (closeModalTimer.current) {
-      clearTimeout(closeModalTimer.current);
-    }
-    closeModalTimer.current = setTimeout(() => {
-      closeProductModal();
-    }, 700);
-
-    Animated.sequence([
-      Animated.timing(addToCartScale, {
-        toValue: 0.95,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(addToCartScale, {
-        toValue: 1.05,
-        friction: 4,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-      Animated.spring(addToCartScale, {
-        toValue: 1,
-        friction: 5,
-        tension: 60,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }
-
-  useEffect(() => {
-    if (!selectedProduct) return;
-    const cartItem = state.items.find((item) => item.id === selectedProduct.id);
-    setSelectedQuantity(cartItem?.quantity || 1);
-  }, [selectedProduct, state.items]);
-
-  useEffect(() => {
-    return () => {
-      if (addButtonFeedbackTimer.current) {
-        clearTimeout(addButtonFeedbackTimer.current);
-      }
-      if (closeModalTimer.current) {
-        clearTimeout(closeModalTimer.current);
-      }
-    };
-  }, []);
-
-  const formattedWeight = selectedProduct ? formatWeight(selectedProduct.weight, selectedProduct.weightUnit) : '';
-  const weightCaloriesText =
-    formattedWeight && selectedProduct?.calories
-      ? `${formattedWeight} • ${selectedProduct.calories} cals`
-      : formattedWeight
-        ? formattedWeight
-        : selectedProduct?.calories
-          ? `${selectedProduct.calories} cals`
-          : '';
-  const normalizedName = selectedProduct?.name?.toLowerCase() ?? '';
-  const quantityLabel = normalizedName.includes('avocado') ? 'avocado' : 'item';
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
@@ -488,6 +343,7 @@ export default function CategoryProductsScreen() {
         </View>
       ) : (
         <ScrollView
+          contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.sectionListContent}
         >
@@ -498,43 +354,55 @@ export default function CategoryProductsScreen() {
               </ThemedText>
             </View>
           ) : (
-            productSections.map((section) => {
-              return (
-                <View key={section.id} style={styles.subcategorySection}>
-                  <TouchableOpacity
-                    style={styles.subcategoryHeader}
-                    onPress={() => openSubcategoryProducts(section)}
-                    activeOpacity={0.75}
-                    accessibilityRole="button"
-                    accessibilityLabel={`View all ${section.title}`}
+            <>
+              {productSections.map((section, index) => {
+                const accent = getShelfAccent(section.title, index);
+
+                return (
+                  <View
+                    key={section.id}
+                    style={[
+                      styles.subcategorySection,
+                      {
+                        backgroundColor: accent.surface,
+                      },
+                    ]}
                   >
-                    <ThemedText style={styles.subcategoryTitle}>{section.title}</ThemedText>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color="#6b7280"
-                    />
-                  </TouchableOpacity>
-                  <View style={styles.subcategoryDivider} />
-                  <FlatList
-                    data={section.products}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    keyExtractor={(item) => `${section.id}-${item.id}`}
-                    contentContainerStyle={styles.subcategoryHorizontalList}
-                    renderItem={({ item }) => (
-                      <View style={styles.horizontalCardWrapper}>
-                        <ProductCard
-                          product={item}
-                          onPress={openProductModal}
-                          showBorder={false}
-                        />
+                    <TouchableOpacity
+                      style={styles.subcategoryHeader}
+                      onPress={() => openSubcategoryProducts(section)}
+                      activeOpacity={0.75}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View all ${section.title}`}
+                    >
+                      <View style={styles.subcategoryHeaderCopy}>
+                        <ThemedText style={styles.subcategoryTitle}>{section.title}</ThemedText>
                       </View>
-                    )}
-                  />
-                </View>
-              );
-            })
+                      <View style={styles.viewAllPill}>
+                        <ThemedText style={styles.viewAllText}>View all</ThemedText>
+                        <Ionicons name="arrow-forward" size={14} color="#FFFFFF" />
+                      </View>
+                    </TouchableOpacity>
+                    <FlatList
+                      data={section.products}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      keyExtractor={(item) => `${section.id}-${item.id}`}
+                      contentContainerStyle={styles.subcategoryHorizontalList}
+                      renderItem={({ item }) => (
+                        <View style={styles.horizontalCardWrapper}>
+                          <ProductCard
+                            product={item}
+                            onPress={openProductModal}
+                            showBorder={false}
+                          />
+                        </View>
+                      )}
+                    />
+                  </View>
+                );
+              })}
+            </>
           )}
         </ScrollView>
       )}
@@ -576,33 +444,51 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   sectionListContent: {
-    paddingHorizontal: 12,
-    paddingBottom: 22,
-    gap: 16,
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 24,
+    gap: 12,
   },
   subcategorySection: {
-    gap: 8,
+    gap: 10,
+    borderRadius: 20,
+    paddingTop: 14,
+    paddingBottom: 14,
   },
   subcategoryHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 2,
+    gap: 12,
+    paddingHorizontal: 16,
+  },
+  subcategoryHeaderCopy: {
+    flex: 1,
   },
   subcategoryTitle: {
-    color: '#111827',
+    color: '#FFFFFF',
     fontSize: 20,
     fontWeight: '700',
   },
-  subcategoryDivider: {
-    height: 1,
-    backgroundColor: '#e5e7eb',
+  viewAllPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  viewAllText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   subcategoryHorizontalList: {
-    paddingTop: 0,
-    paddingBottom: 4,
-    paddingRight: 12,
-    gap: 10,
+    paddingLeft: 16,
+    paddingRight: 16,
+    paddingBottom: 2,
+    gap: 12,
   },
   horizontalCardWrapper: {
     width: 164,

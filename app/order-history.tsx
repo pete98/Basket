@@ -2,7 +2,7 @@ import { useAuthGuard } from '@/hooks/use-auth-guard';
 import { getUserOrders } from '@/lib/api/orders';
 import { ORDER_EVENTS, orderBus } from '@/lib/order-bus';
 import { getUserByAuth0 } from '@/lib/api/users';
-import { type PaymentCollectionStatus, type StoreOrderSummary, type StoreReviewStatus } from '@/lib/types/orders';
+import { type StoreOrderSummary, ORDER_STATUSES } from '@/lib/types/orders';
 import { useRouter } from 'expo-router';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import * as SecureStore from 'expo-secure-store';
@@ -14,48 +14,30 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const ACCESS_TOKEN_KEY = 'auth0_access_token';
 const ORDERS_POLLING_INTERVAL_MS = 30_000;
 
-function formatPickupWindow(start: string, end: string): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (Number.isNaN(startDate.valueOf()) || Number.isNaN(endDate.valueOf()))
-    return `${start} - ${end}`;
-
-  const dateLabel = startDate.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  });
-  const startTime = startDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-  const endTime = endDate.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-
-  return `${dateLabel} · ${startTime} - ${endTime}`;
-}
-
 function formatOrderStatus(status: string): string {
   return status.replace(/_/g, ' ').toLowerCase();
 }
 
-function formatStoreReviewStatus(status?: StoreReviewStatus): string {
-  if (!status) return 'unknown';
-  return status.replace(/_/g, ' ').toLowerCase();
+const FINISHED_ORDER_STATUSES = new Set([
+  ORDER_STATUSES.pickedUp,
+  'DELIVERED',
+]);
+
+function isFinishedOrder(status: string, deliveryStatus?: string | null): boolean {
+  const normalizedStatus = status.toUpperCase().trim().replace(/[^A-Z]/g, '_');
+  const normalizedDeliveryStatus = (deliveryStatus ?? '').toUpperCase().trim().replace(/[^A-Z]/g, '_');
+  return FINISHED_ORDER_STATUSES.has(normalizedStatus) || FINISHED_ORDER_STATUSES.has(normalizedDeliveryStatus);
 }
 
-function formatPaymentCollectionStatus(status?: PaymentCollectionStatus): string {
-  if (!status) return 'unknown';
-  return status.replace(/_/g, ' ').toLowerCase();
-}
+function formatPickupDate(start: string): string {
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.valueOf())) return start;
 
-function canTrackDelivery(order: StoreOrderSummary): boolean {
-  return (
-    order.fulfillmentType === 'DELIVERY' &&
-    typeof order.deliveryTrackingUrl === 'string' &&
-    order.deliveryTrackingUrl.trim().length > 0
-  );
+  return startDate.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 function mergeOrderStatuses(
@@ -74,8 +56,7 @@ function mergeOrderStatuses(
 
     const hasStatusChanged =
       order.status !== incoming.status ||
-      order.storeReviewStatus !== incoming.storeReviewStatus ||
-      order.paymentCollectionStatus !== incoming.paymentCollectionStatus ||
+      order.deliveryStatus !== incoming.deliveryStatus ||
       order.pendingSubstitutionCount !== incoming.pendingSubstitutionCount ||
       order.deliveryTrackingUrl !== incoming.deliveryTrackingUrl;
 
@@ -84,8 +65,7 @@ function mergeOrderStatuses(
     return {
       ...order,
       status: incoming.status,
-      storeReviewStatus: incoming.storeReviewStatus,
-      paymentCollectionStatus: incoming.paymentCollectionStatus,
+      deliveryStatus: incoming.deliveryStatus,
       pendingSubstitutionCount: incoming.pendingSubstitutionCount,
       deliveryTrackingUrl: incoming.deliveryTrackingUrl,
     };
@@ -270,7 +250,7 @@ export default function OrderHistoryScreen() {
           <View>
             <Text style={styles.pageHeaderTitle}>Order History</Text>
             <Text style={styles.pageHeaderSubtitle}>
-              {isLoading ? 'Loading orders...' : 'Track your store approval and payment capture'}
+              {isLoading ? 'Loading orders...' : 'Track your past orders'}
             </Text>
           </View>
         </View>
@@ -286,47 +266,76 @@ export default function OrderHistoryScreen() {
             data={orders}
             keyExtractor={(item) => item.orderId}
             contentContainerStyle={styles.orderList}
-            renderItem={({ item }) => (
-              <Pressable
-                style={styles.orderCard}
-                onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.orderId } })}
-                accessibilityRole="button"
-                accessibilityLabel={`Open details for order ${item.orderId}`}
-              >
-                <View style={styles.orderHeader}>
-                  <Text style={styles.orderId}>Order {item.orderId}</Text>
-                  <View style={styles.statusPill}>
-                    <Text style={styles.statusText}>{formatOrderStatus(item.status)}</Text>
+            renderItem={({ item }) => {
+              const isFinished = isFinishedOrder(item.status, item.deliveryStatus);
+              const hasTrackingUrl =
+                typeof item.deliveryTrackingUrl === 'string' &&
+                item.deliveryTrackingUrl.trim().length > 0;
+
+              return (
+                <Pressable
+                  style={[styles.orderCard, isFinished && styles.orderCardCompact]}
+                  onPress={() => router.push({ pathname: '/order-detail', params: { orderId: item.orderId } })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open details for order ${item.orderId}`}
+                >
+                  <View style={[styles.orderHeader, isFinished && styles.orderHeaderCompact]}>
+                    <Text style={styles.orderId}>Order {item.orderId}</Text>
+                    {!isFinished ? (
+                      <View style={styles.statusPill}>
+                        <Text style={styles.statusText}>{formatOrderStatus(item.status)}</Text>
+                      </View>
+                    ) : null}
                   </View>
-                </View>
-                <Text style={styles.orderWindow}>
-                  {formatPickupWindow(item.pickupWindowStart, item.pickupWindowEnd)}
-                </Text>
-                <Text style={styles.orderMeta}>
-                  Store review: {formatStoreReviewStatus(item.storeReviewStatus)}
-                </Text>
-                <Text style={styles.orderMeta}>
-                  Payment: {formatPaymentCollectionStatus(item.paymentCollectionStatus)}
-                </Text>
-                {(item.pendingSubstitutionCount ?? 0) > 0 && (
-                  <Text style={styles.pendingSubstitutions}>
-                    Waiting on your substitution decision ({item.pendingSubstitutionCount})
+                  {isFinished ? (
+                    <View style={styles.finishedHeaderRow}>
+                      <Text style={[styles.orderWindow, styles.orderWindowCompact]}>
+                        {formatPickupDate(item.pickupWindowStart)}
+                      </Text>
+                      <Pressable
+                        style={styles.reorderButton}
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          router.push('/');
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Reorder order ${item.orderId}`}
+                      >
+                        <Text style={styles.reorderButtonText}>Reorder</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <Text style={styles.orderWindow}>{formatPickupDate(item.pickupWindowStart)}</Text>
+                  )}
+                  {hasTrackingUrl ? (
+                    <Pressable
+                      style={styles.trackButton}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleTrackDelivery(item.deliveryTrackingUrl!.trim());
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Track delivery for order ${item.orderId}`}
+                    >
+                      <Text style={styles.trackButtonText}>Track delivery</Text>
+                    </Pressable>
+                  ) : null}
+                  {(item.pendingSubstitutionCount ?? 0) > 0 && (
+                    <Text
+                      style={[
+                        styles.pendingSubstitutions,
+                        isFinished && styles.pendingSubstitutionsCompact,
+                      ]}
+                    >
+                      Waiting on your substitution decision ({item.pendingSubstitutionCount})
+                    </Text>
+                  )}
+                  <Text style={[styles.orderTotal, isFinished && styles.orderTotalCompact]}>
+                    ${item.total.toFixed(2)}
                   </Text>
-                )}
-                {canTrackDelivery(item) ? (
-                  <Pressable
-                    style={styles.trackButton}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      void handleTrackDelivery(item.deliveryTrackingUrl!.trim());
-                    }}
-                  >
-                    <Text style={styles.trackButtonText}>Track Delivery</Text>
-                  </Pressable>
-                ) : null}
-                <Text style={styles.orderTotal}>${item.total.toFixed(2)}</Text>
-              </Pressable>
-            )}
+                </Pressable>
+              );
+            }}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -380,12 +389,18 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
   },
+  orderCardCompact: {
+    padding: 12,
+  },
   orderHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  orderHeaderCompact: {
+    marginBottom: 3,
   },
   orderId: {
     fontSize: 15,
@@ -404,16 +419,32 @@ const styles = StyleSheet.create({
     color: '#374151',
     textTransform: 'capitalize',
   },
+  finishedHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: 4,
+  },
+  reorderButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: '#111827',
+    alignSelf: 'flex-end',
+  },
+  reorderButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   orderWindow: {
     fontSize: 13,
     color: '#475467',
-    marginBottom: 8,
-  },
-  orderMeta: {
-    fontSize: 12,
-    color: '#667085',
     marginBottom: 4,
-    textTransform: 'capitalize',
+  },
+  orderWindowCompact: {
+    marginBottom: 3,
   },
   pendingSubstitutions: {
     fontSize: 12,
@@ -422,7 +453,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   trackButton: {
-    marginTop: 6,
+    marginTop: 8,
     alignSelf: 'flex-start',
     backgroundColor: '#111827',
     borderRadius: 999,
@@ -434,11 +465,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  pendingSubstitutionsCompact: {
+    marginTop: 4,
+    marginBottom: 6,
+  },
   orderTotal: {
     fontSize: 16,
     fontWeight: '700',
     color: '#111322',
-    marginTop: 6,
+    marginTop: 3,
+  },
+  orderTotalCompact: {
+    marginTop: 2,
   },
   gateCard: {
     marginTop: 24,

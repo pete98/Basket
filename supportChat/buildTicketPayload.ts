@@ -26,7 +26,7 @@ const ISSUE_LABELS: Record<SupportTicketType, string> = {
 
 function trimToMax(value: string, max: number): string {
   if (value.length <= max) return value;
-  return `${value.slice(0, Math.max(0, max - 1)).trimEnd()}...`;
+  return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
 }
 
 function getPriority(type: SupportTicketType): SupportPriority {

@@ -12,7 +12,7 @@ export default function TabLayout() {
   return (
     <View style={styles.root}>
       <NativeTabs
-        backgroundColor="#0f172a"
+        backgroundColor="#FFFFFF"
         tintColor="#f97316"
         disableTransparentOnScrollEdge
         iconColor={{ default: "#94a3b8", selected: "black" }}
@@ -34,9 +34,9 @@ export default function TabLayout() {
         <NativeTabs.Trigger name="cart">
           <NativeTabs.Trigger.Label>Cart</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon sf="cart.fill" drawable="shopping-cart" />
-          <NativeTabs.Trigger.Badge hidden={cartItemCount <= 0}>
-            {cartBadgeValue}
-          </NativeTabs.Trigger.Badge>
+          {cartItemCount > 0 && (
+            <NativeTabs.Trigger.Badge>{cartBadgeValue}</NativeTabs.Trigger.Badge>
+          )}
         </NativeTabs.Trigger>
 
         <NativeTabs.Trigger name="user">
@@ -51,5 +51,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    backgroundColor: "#FFFFFF",
   },
 });

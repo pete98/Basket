@@ -2,14 +2,14 @@ import React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
 import { AIFab } from '@/components/ai/fab';
 
-const pushMock = jest.fn();
+const mockPush = jest.fn();
 
 jest.mock('expo-router', () => ({
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 beforeEach(() => {
-  pushMock.mockReset();
+  mockPush.mockReset();
 });
 
 jest.mock('expo-haptics', () => ({
@@ -29,21 +29,77 @@ jest.mock('react-native-safe-area-context', () => ({
 
 // Reanimated + RNGH mocks for tests
 jest.mock('react-native-reanimated', () => {
-  const Reanimated = require('react-native-reanimated/mock');
-  Reanimated.default.call = () => {};
-  return Reanimated;
+  const React = require('react');
+  const { View } = require('react-native');
+  const Animated = Object.assign(
+    React.forwardRef((props: any, ref: any) => <View ref={ref} {...props} />),
+    { View }
+  );
+
+  return {
+    __esModule: true,
+    default: Animated,
+    runOnJS: (fn: (...args: any[]) => unknown) => fn,
+    useAnimatedStyle: (factory: () => Record<string, unknown>) => factory(),
+    useSharedValue: <T,>(value: T) => ({ value }),
+    withSpring: (value: unknown) => value,
+    withTiming: (value: unknown, _config?: unknown, callback?: (finished: boolean) => void) => {
+      callback?.(true);
+      return value;
+    },
+  };
 });
 
 jest.mock('react-native-gesture-handler', () => {
   const React = require('react');
-  const { View } = require('react-native');
+  const tapEndHandlers: Array<(event: unknown, success: boolean) => void> = [];
+
+  function createPanBuilder() {
+    return {
+      hitSlop: () => createPanBuilder(),
+      minDistance: () => createPanBuilder(),
+      onStart: () => createPanBuilder(),
+      onChange: () => createPanBuilder(),
+      onEnd: () => createPanBuilder(),
+    };
+  }
+
+  function createTapBuilder() {
+    return {
+      maxDuration: () => createTapBuilder(),
+      maxDeltaX: () => createTapBuilder(),
+      maxDeltaY: () => createTapBuilder(),
+      onEnd: (handler?: (event: unknown, success: boolean) => void) => {
+        if (handler) tapEndHandlers.push(handler);
+        return createTapBuilder();
+      },
+    };
+  }
+
+  function createLongPressBuilder() {
+    return {
+      minDuration: () => createLongPressBuilder(),
+      maxDistance: () => createLongPressBuilder(),
+      onEnd: () => createLongPressBuilder(),
+    };
+  }
+
   return {
     Gesture: {
-      Pan: () => ({ hitSlop: () => ({ onChange: () => ({ onEnd: () => ({}) }) }) }),
-      Tap: () => ({ maxDuration: () => ({ onEnd: () => ({}) }) }),
+      Pan: () => createPanBuilder(),
+      Tap: () => createTapBuilder(),
+      LongPress: () => createLongPressBuilder(),
+      Race: (...gestures: any[]) => gestures,
       Simultaneous: (_a: any, _b: any) => ({}),
     },
-    GestureDetector: ({ children }: { children: React.ReactNode }) => <View>{children}</View>,
+    GestureDetector: ({ children }: { children: React.ReactNode }) => {
+      const child = React.Children.only(children);
+      const testId = child.props?.testID;
+      const handlerIndex = testId === 'ai-fab-indicator' ? 1 : 0;
+      return React.cloneElement(child, {
+        onResponderRelease: () => tapEndHandlers[handlerIndex]?.({}, true),
+      });
+    },
   };
 });
 
@@ -56,7 +112,7 @@ describe('AIFab', () => {
     await waitFor(() => {
       const { impactAsync } = require('expo-haptics');
       expect(impactAsync).toHaveBeenCalled();
-      expect(pushMock).toHaveBeenCalledWith({
+      expect(mockPush).toHaveBeenCalledWith({
         pathname: '/ai-modal',
         params: {
           left: expect.any(String),
@@ -74,13 +130,6 @@ describe('AIFab', () => {
     });
   });
 });
-
-
-
-
-
-
-
 
 
 
